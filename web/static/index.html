@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess Coach</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            board: { light: '#f0d9b5', dark: '#b58863' },
+            wood: { 50: '#faf6f1', 100: '#f0e6d6', 200: '#e0ccad', 400: '#c4a265', 600: '#8b6914', 800: '#5c4a1e' },
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/static/vendor/chessground-dist/chessground.base.css">
+  <link rel="stylesheet" href="/static/vendor/chessground-dist/chessground.brown.css">
+  <link rel="stylesheet" href="/static/vendor/chessground-dist/chessground.cburnett.css">
+  <style>
+    :root { --board-size: 600px; }
+
+    cg-container { display: block; }
+    #board { width: var(--board-size); height: var(--board-size); }
+
+    /* Eval bar */
+    .eval-bar { width: 30px; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+    .eval-bar-fill { position: absolute; bottom: 0; width: 100%; background: #ece5d8; transition: height 0.5s cubic-bezier(0.4,0,0.2,1); }
+    .eval-bar-black { position: absolute; top: 0; width: 100%; background: #3a3a3a; transition: height 0.5s cubic-bezier(0.4,0,0.2,1); }
+    .eval-bar-label { position: absolute; width: 100%; text-align: center; font-size: 9px; font-weight: 700; z-index: 1; font-family: monospace; }
+    .eval-bar-label.top { top: 3px; color: #ccc; }
+    .eval-bar-label.bottom { bottom: 3px; color: #555; }
+
+    /* Concept diverging bars */
+    .concept-bar-wrap { height: 18px; background: #f3f4f6; border-radius: 4px; position: relative; overflow: hidden; }
+    .concept-bar-wrap::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #d1d5db; z-index: 1; }
+    .concept-bar-seg { height: 100%; position: absolute; top: 0; transition: left 0.4s, width 0.4s; border-radius: 2px; }
+
+    /* Move list */
+    .move-cell { cursor: pointer; padding: 2px 5px; border-radius: 3px; display: inline-block; font-size: 13px; }
+    .move-cell:hover { background: #dbeafe; }
+    .move-cell.active { background: #3b82f6; color: #fff; }
+
+    /* Quality badges */
+    .badge { padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; display: inline-block; letter-spacing: 0.02em; }
+    .badge-brilliant { background: #0d9488; color: #fff; }
+    .badge-great { background: #3b82f6; color: #fff; }
+    .badge-best { background: #22c55e; color: #fff; }
+    .badge-good { background: #86efac; color: #166534; }
+    .badge-book { background: #a78bfa; color: #fff; }
+    .badge-forced { background: #9ca3af; color: #fff; }
+    .badge-inaccuracy { background: #fbbf24; color: #78350f; }
+    .badge-mistake { background: #f97316; color: #fff; }
+    .badge-blunder { background: #ef4444; color: #fff; }
+
+    /* Coach comment */
+    .coach-box { border-left: 3px solid #3b82f6; }
+    .coach-box strong { font-weight: 600; color: #1e3a5f; }
+    .coach-box em { font-style: italic; }
+    .coach-box ul { list-style-type: disc; padding-left: 1rem; margin: 4px 0; }
+
+    /* Modal */
+    .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); }
+
+    /* Scrollbar */
+    .panel-scroll::-webkit-scrollbar { width: 5px; }
+    .panel-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    /* Progress bar */
+    .progress-bar { height: 3px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: #3b82f6; transition: width 0.3s ease; }
+
+    /* Nav button */
+    .nav-btn { width: 40px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 16px; transition: background 0.15s; user-select: none; cursor: pointer; color: #d1d5db; }
+    .nav-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .nav-btn:active { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body class="bg-stone-800 text-gray-800 h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="bg-stone-900 border-b border-stone-700 px-4 py-1.5 flex items-center justify-between shrink-0">
+    <div class="flex items-center gap-3">
+      <h1 class="text-base font-bold text-stone-200 tracking-wide">Chess Coach</h1>
+      <span class="text-[10px] text-stone-500 uppercase tracking-widest">AI Trainer</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btn-new" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">New Game</button>
+      <button id="btn-import" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">Import</button>
+      <select id="mode-select" class="px-2 py-1 text-xs bg-stone-700 text-stone-200 border border-stone-600 rounded">
+        <option value="analysis">Analysis</option>
+        <option value="play-white">Play as White</option>
+        <option value="play-black">Play as Black</option>
+      </select>
+      <select id="skill-select" class="hidden px-2 py-1 text-xs bg-stone-700 text-stone-200 border border-stone-600 rounded">
+        <option value="1">Beginner (1100)</option>
+        <option value="3">Easy (1300)</option>
+        <option value="5">Medium (1500)</option>
+        <option value="8">Intermediate (1700)</option>
+        <option value="11">Advanced (1900)</option>
+        <option value="14">Strong (2100)</option>
+        <option value="17">Expert (2300)</option>
+        <option value="20">Maximum</option>
+      </select>
+      <div class="border-l border-stone-600 h-4 mx-1"></div>
+      <select id="lang-select" class="px-2 py-1 text-xs bg-stone-700 text-stone-200 border border-stone-600 rounded">
+        <option value="ru">RU</option>
+        <option value="en">EN</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="flex flex-1 overflow-hidden">
+
+    <!-- Left: Board Area -->
+    <div class="flex flex-col items-center justify-center shrink-0 bg-stone-800 px-6" id="board-area">
+      <!-- Bulk analysis progress -->
+      <div id="bulk-progress" class="hidden w-full mb-2">
+        <div class="flex items-center justify-between text-[10px] text-stone-400 mb-0.5">
+          <span id="bulk-label">Analyzing...</span>
+          <span id="bulk-count">0/0</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="bulk-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="flex gap-1">
+        <!-- Eval Bar -->
+        <div class="eval-bar bg-[#ece5d8]" id="eval-bar-wrap">
+          <div class="eval-bar-label top" id="eval-top"></div>
+          <div class="eval-bar-black" id="eval-bar-black" style="height:50%"></div>
+          <div class="eval-bar-label bottom" id="eval-bottom"></div>
+        </div>
+        <!-- Board -->
+        <div id="board" class="rounded shadow-xl"></div>
+      </div>
+
+      <!-- Nav buttons + flip -->
+      <div class="flex items-center gap-1 mt-2">
+        <button id="btn-start" class="nav-btn" title="Start">&#x23EE;</button>
+        <button id="btn-prev" class="nav-btn" title="Previous">&#x25C0;</button>
+        <button id="btn-next" class="nav-btn" title="Next">&#x25B6;</button>
+        <button id="btn-end" class="nav-btn" title="End">&#x23ED;</button>
+        <div class="w-px h-5 bg-stone-600 mx-2"></div>
+        <button id="btn-flip" class="nav-btn" title="Flip board">&#x21C5;</button>
+      </div>
+      <div id="move-info" class="text-xs text-stone-400 h-4 mt-1"></div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="flex-1 flex flex-col bg-white min-w-0">
+      <!-- Tabs -->
+      <div class="flex border-b border-gray-200 shrink-0">
+        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-blue-500 text-blue-600" data-tab="analysis">Analysis</button>
+        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600" data-tab="concepts">Concepts</button>
+        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600" data-tab="moves">Moves</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="flex-1 overflow-y-auto panel-scroll">
+        <!-- Analysis Tab -->
+        <div id="panel-analysis" class="tab-panel p-4 space-y-3">
+          <!-- Eval -->
+          <div class="text-center">
+            <div id="eval-display" class="text-3xl font-bold text-gray-400 font-mono">0.00</div>
+            <div id="quality-container" class="mt-1"></div>
+          </div>
+
+          <!-- Opening -->
+          <div id="opening-container"></div>
+
+          <!-- Tablebase -->
+          <div id="tablebase-container"></div>
+
+          <!-- Best Moves / Engine Lines -->
+          <div>
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5" data-i18n="engineLines">Engine Lines</div>
+            <div id="best-moves" class="space-y-0.5"></div>
+          </div>
+
+          <!-- Coach -->
+          <div class="flex items-center gap-2 pt-3 border-t border-gray-100">
+            <input type="checkbox" id="coach-enabled" class="rounded text-blue-500 w-4 h-4">
+            <label for="coach-enabled" class="text-sm text-gray-600 cursor-pointer" data-i18n="coach">AI Coach</label>
+          </div>
+          <div id="comment-container"></div>
+        </div>
+
+        <!-- Concepts Tab -->
+        <div id="panel-concepts" class="tab-panel p-4 hidden">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider" data-i18n="positionConcepts">Position Concepts</div>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-white border border-gray-300 inline-block"></span> <span data-i18n-inline="white">White</span></span>
+              <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-gray-800 inline-block"></span> <span data-i18n-inline="black">Black</span></span>
+            </div>
+          </div>
+          <div id="concepts-display" class="space-y-1.5"></div>
+        </div>
+
+        <!-- Moves Tab -->
+        <div id="panel-moves" class="tab-panel p-4 hidden">
+          <div id="moves-list" class="text-sm leading-relaxed font-mono"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Import Modal -->
+  <div id="import-modal" class="fixed inset-0 modal-backdrop z-50 hidden items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-[520px] max-h-[80vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-gray-800" data-i18n="importGame">Import Game</h2>
+        <button id="import-close" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+      </div>
+      <div class="flex gap-2 mb-4">
+        <button id="import-lichess-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition">Lichess</button>
+        <button id="import-chesscom-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition">Chess.com</button>
+        <button id="import-pgn-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition">PGN</button>
+      </div>
+      <div id="import-lichess-panel">
+        <input type="text" id="lichess-username" placeholder="Lichess username" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <button id="lichess-fetch" class="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition">Load Games</button>
+      </div>
+      <div id="import-chesscom-panel" class="hidden">
+        <input type="text" id="chesscom-username" placeholder="Chess.com username" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-green-400">
+        <button id="chesscom-fetch" class="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">Load Games</button>
+      </div>
+      <div id="import-pgn-panel" class="hidden">
+        <textarea id="pgn-input" rows="8" placeholder="Paste PGN here..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+        <button id="pgn-load" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-i18n="loadPgn">Load PGN</button>
+      </div>
+      <div id="game-list" class="mt-3 space-y-1 max-h-[300px] overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script type="module">
+    import { Chessground } from '/static/vendor/chessground-dist/chessground.js';
+    import { Chess } from '/static/vendor/chess.js';
+
+    // ─── i18n ──────────────────────────────────────────────
+    const I18N = {
+      ru: {
+        newGame: 'Новая', import_: 'Импорт', flip: 'Перевернуть',
+        analysis: 'Анализ', concepts: 'Концепты', moves: 'Ходы',
+        engineLines: 'Линии движка', coach: 'AI Тренер', positionConcepts: 'Концепты позиции',
+        white: 'Белые', black: 'Чёрные', analyzing: 'Анализирую...',
+        importGame: 'Импорт партии', loadGames: 'Загрузить', loadPgn: 'Загрузить PGN',
+        close: 'Закрыть', noGames: 'Партий не найдено', loading: 'Загрузка...',
+        playWhite: 'Играть белыми', playBlack: 'Играть чёрными',
+        bulkAnalyzing: 'Анализ партии...', bulkDone: 'Анализ завершён',
+      },
+      en: {
+        newGame: 'New', import_: 'Import', flip: 'Flip',
+        analysis: 'Analysis', concepts: 'Concepts', moves: 'Moves',
+        engineLines: 'Engine Lines', coach: 'AI Coach', positionConcepts: 'Position Concepts',
+        white: 'White', black: 'Black', analyzing: 'Analyzing...',
+        importGame: 'Import Game', loadGames: 'Load Games', loadPgn: 'Load PGN',
+        close: 'Close', noGames: 'No games found', loading: 'Loading...',
+        playWhite: 'Play as White', playBlack: 'Play as Black',
+        bulkAnalyzing: 'Analyzing game...', bulkDone: 'Analysis complete',
+      },
+    };
+    let lang = 'ru';
+    function t(key) { return (I18N[lang] || I18N.en)[key] || key; }
+
+    function applyI18n() {
+      document.getElementById('btn-new').textContent = t('newGame');
+      document.getElementById('btn-import').textContent = t('import_');
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        const tab = b.dataset.tab;
+        if (tab === 'analysis') b.textContent = t('analysis');
+        if (tab === 'concepts') b.textContent = t('concepts');
+        if (tab === 'moves') b.textContent = t('moves');
+      });
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        if (I18N[lang] && I18N[lang][key]) el.textContent = I18N[lang][key];
+      });
+      document.querySelectorAll('[data-i18n-inline]').forEach(el => {
+        const key = el.dataset.i18nInline;
+        if (I18N[lang] && I18N[lang][key]) el.textContent = I18N[lang][key];
+      });
+      const modeSelect = document.getElementById('mode-select');
+      modeSelect.options[0].textContent = t('analysis');
+      modeSelect.options[1].textContent = t('playWhite');
+      modeSelect.options[2].textContent = t('playBlack');
+    }
+
+    // ─── State ─────────────────────────────────────────────
+    let chess = new Chess();
+    let ground = null;
+    let ws = null;
+    let mode = 'analysis';
+    let skillLevel = 5;
+    let orientation = 'white';
+    let gameHistory = []; // [{fen, fenBefore, san, move_uci, analysis}]
+    let currentPly = 0;
+    let analyzing = false;
+
+    // Bulk analysis state
+    let bulkAnalyzing = false;
+    let bulkTotal = 0;
+    let bulkDone = 0;
+    let bulkResolve = null; // resolve function for current bulk analysis promise
+
+    // ─── Board Sizing ────────────────────────────────────
+    function computeBoardSize() {
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const headerH = 44;
+      const navH = 50;
+      const progressH = 24;
+      const infoH = 20;
+      const padding = 40;
+      const maxByHeight = vh - headerH - navH - progressH - infoH - padding;
+      const minPanelWidth = 380;
+      const evalBarW = 30;
+      const boardPadding = 52; // px-6 * 2 + gap
+      const maxByWidth = vw - minPanelWidth - evalBarW - boardPadding;
+      const size = Math.max(320, Math.min(maxByHeight, maxByWidth, 780));
+      document.documentElement.style.setProperty('--board-size', size + 'px');
+      // Also set eval bar height
+      const evalBar = document.getElementById('eval-bar-wrap');
+      if (evalBar) evalBar.style.height = size + 'px';
+    }
+
+    window.addEventListener('resize', computeBoardSize);
+
+    // ─── WebSocket ─────────────────────────────────────────
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => console.log('WS connected');
+      ws.onmessage = (e) => handleWSMessage(JSON.parse(e.data));
+      ws.onclose = () => setTimeout(connectWS, 2000);
+      ws.onerror = (e) => console.error('WS error', e);
+    }
+
+    function send(data) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+      }
+    }
+
+    function handleWSMessage(msg) {
+      if (msg.type === 'analysis') {
+        analyzing = false;
+        // If bulk analysis response, store by index
+        if (msg.data._bulk_index !== undefined) {
+          const idx = msg.data._bulk_index;
+          delete msg.data._bulk_index;
+          if (idx < gameHistory.length) {
+            gameHistory[idx].analysis = msg.data;
+          }
+          // If this is the currently viewed move, update display
+          if (idx === currentPly - 1) {
+            updateAnalysisDisplay(msg.data);
+          }
+          // Resolve bulk promise
+          if (bulkResolve) {
+            bulkResolve();
+            bulkResolve = null;
+          }
+        } else {
+          updateAnalysis(msg.data);
+        }
+      }
+      else if (msg.type === 'comment') {
+        if (msg.data.error) {
+          showComment(`<span class="text-amber-600 text-xs">${msg.data.error}</span>`);
+        } else {
+          showComment(msg.data.comment);
+        }
+      }
+      else if (msg.type === 'bot_move') { makeBotMove(msg.data); }
+      else if (msg.type === 'import') { showImportedGames(msg.data); }
+    }
+
+    // ─── Board ─────────────────────────────────────────────
+    function initBoard() {
+      const el = document.getElementById('board');
+      ground = Chessground(el, {
+        orientation: orientation,
+        fen: chess.fen(),
+        movable: {
+          free: false,
+          color: 'both',
+          dests: legalDests(),
+          showDests: true,
+        },
+        draggable: { showGhost: true },
+        drawable: { enabled: true, visible: true },
+        events: { move: onUserMove },
+        animation: { duration: 200 },
+      });
+    }
+
+    function legalDests() {
+      const dests = new Map();
+      const moves = chess.moves({ verbose: true });
+      for (const m of moves) {
+        if (!dests.has(m.from)) dests.set(m.from, []);
+        dests.get(m.from).push(m.to);
+      }
+      return dests;
+    }
+
+    function updateBoard() {
+      if (!ground) return;
+      ground.set({
+        fen: chess.fen(),
+        turnColor: chess.turn() === 'w' ? 'white' : 'black',
+        movable: {
+          color: getMovableColor(),
+          dests: legalDests(),
+        },
+        check: chess.inCheck(),
+      });
+    }
+
+    function getMovableColor() {
+      if (mode === 'analysis') return 'both';
+      if (mode === 'play-white') return 'white';
+      if (mode === 'play-black') return 'black';
+      return 'both';
+    }
+
+    // ─── Best Move Arrows ──────────────────────────────────
+    function showBestMoveArrows(bestMoves) {
+      if (!ground) return;
+      if (!bestMoves || bestMoves.length === 0) {
+        ground.setAutoShapes([]);
+        return;
+      }
+      const brushes = ['green', 'blue', 'yellow'];
+      const shapes = bestMoves.slice(0, 3).map((m, i) => ({
+        orig: m.move.substring(0, 2),
+        dest: m.move.substring(2, 4),
+        brush: brushes[i],
+      }));
+      ground.setAutoShapes(shapes);
+    }
+
+    function clearArrows() {
+      if (ground) ground.setAutoShapes([]);
+    }
+
+    // ─── Move Handling ─────────────────────────────────────
+    function onUserMove(from, to) {
+      const move = chess.move({ from, to, promotion: 'q' });
+      if (!move) { updateBoard(); return; }
+
+      const fenBefore = gameHistory.length > 0
+        ? gameHistory[gameHistory.length - 1].fen
+        : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+      gameHistory.push({
+        fen: chess.fen(),
+        fenBefore: fenBefore,
+        san: move.san,
+        move_uci: from + to + (move.promotion || ''),
+        analysis: null,
+      });
+      currentPly = gameHistory.length;
+
+      updateBoard();
+      updateMovesList();
+      requestAnalysis();
+
+      // Bot's turn?
+      if (mode === 'play-white' && chess.turn() === 'b') requestBotMove();
+      else if (mode === 'play-black' && chess.turn() === 'w') requestBotMove();
+    }
+
+    function requestAnalysis() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      analyzing = true;
+      showAnalysisSpinner();
+      const entry = gameHistory[currentPly - 1];
+      if (!entry) return;
+      const historyFens = gameHistory.slice(0, currentPly - 1).map(h => h.fen);
+      send({
+        action: 'analyze',
+        fen: entry.fenBefore,
+        move: entry.move_uci,
+        history: historyFens.slice(-7),
+        depth: 18,
+      });
+    }
+
+    function showAnalysisSpinner() {
+      document.getElementById('eval-display').innerHTML =
+        `<span class="inline-block w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>`;
+      document.getElementById('quality-container').innerHTML = '';
+      document.getElementById('best-moves').innerHTML =
+        `<div class="text-sm text-gray-400 py-2">${t('analyzing')}</div>`;
+      clearArrows();
+    }
+
+    function requestBotMove() {
+      send({ action: 'bot_move', fen: chess.fen(), skill: skillLevel, time: 1.0 });
+    }
+
+    function makeBotMove(data) {
+      const from = data.move.substring(0, 2);
+      const to = data.move.substring(2, 4);
+      const promo = data.move[4] || undefined;
+      const move = chess.move({ from, to, promotion: promo });
+      if (!move) return;
+
+      const fenBefore = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].fen : chess.fen();
+      gameHistory.push({
+        fen: chess.fen(),
+        fenBefore: fenBefore,
+        san: move.san,
+        move_uci: data.move,
+        analysis: null,
+      });
+      currentPly = gameHistory.length;
+
+      ground.set({ fen: chess.fen(), lastMove: [from, to] });
+      updateBoard();
+      updateMovesList();
+      requestAnalysis();
+    }
+
+    // ─── Analysis Display ──────────────────────────────────
+    function updateAnalysis(data) {
+      if (currentPly > 0) {
+        gameHistory[currentPly - 1].analysis = data;
+      }
+      updateAnalysisDisplay(data);
+    }
+
+    function updateAnalysisDisplay(data) {
+      // Eval
+      const evalVal = data.played_eval ?? data.eval ?? 0;
+      const mateIn = data.played_mate_in ?? data.mate_in;
+      const evalEl = document.getElementById('eval-display');
+
+      if (mateIn !== null && mateIn !== undefined) {
+        evalEl.textContent = mateIn > 0 ? `#${mateIn}` : `#${-mateIn}`;
+        evalEl.className = `text-3xl font-bold font-mono ${mateIn > 0 ? 'text-gray-900' : 'text-gray-500'}`;
+      } else {
+        const v = (evalVal / 100).toFixed(2);
+        evalEl.textContent = evalVal >= 0 ? `+${v}` : v;
+        evalEl.className = `text-3xl font-bold font-mono ${evalVal > 30 ? 'text-gray-900' : evalVal < -30 ? 'text-gray-500' : 'text-gray-400'}`;
+      }
+
+      // Eval bar
+      updateEvalBar(evalVal, mateIn);
+
+      // Quality badge
+      const qc = document.getElementById('quality-container');
+      const q = data.move_quality;
+      if (q) {
+        const labels = {
+          brilliant: 'Brilliant !!', great: 'Great !', best: 'Best', good: 'Good',
+          book: 'Book', forced: 'Forced', inaccuracy: 'Inaccuracy ?!',
+          mistake: 'Mistake ?', blunder: 'Blunder ??',
+        };
+        qc.innerHTML = `<span class="badge badge-${q}">${labels[q] || q}</span>`;
+      } else {
+        qc.innerHTML = '';
+      }
+
+      // Opening
+      const oc = document.getElementById('opening-container');
+      if (data.opening && data.opening.name) {
+        const o = data.opening;
+        oc.innerHTML = `
+          <div class="bg-blue-50 border border-blue-100 rounded-lg p-2.5">
+            <div class="font-semibold text-blue-900 text-sm">${o.name} <span class="text-blue-400 text-xs ml-1">${o.eco || ''}</span></div>
+            <div class="text-xs text-gray-500 mt-0.5">
+              <span class="text-gray-700">+${o.white_wins || 0}</span>
+              <span class="mx-0.5">=</span><span>${o.draws || 0}</span>
+              <span class="mx-0.5">-</span><span class="text-gray-500">${o.black_wins || 0}</span>
+              <span class="ml-2 text-gray-400">(${o.total_games} games)</span>
+            </div>
+          </div>`;
+      } else {
+        oc.innerHTML = '';
+      }
+
+      // Tablebase
+      const tbc = document.getElementById('tablebase-container');
+      if (data.tablebase) {
+        const tb = data.tablebase;
+        const colorMap = { win: 'green', draw: 'gray', loss: 'red' };
+        const c = colorMap[tb.result] || 'gray';
+        tbc.innerHTML = `
+          <div class="bg-${c}-50 border border-${c}-200 rounded-lg p-2.5">
+            <span class="font-semibold text-${c}-700 text-sm">Tablebase: ${tb.result.toUpperCase()}</span>
+            <span class="text-gray-500 text-xs ml-2">DTZ: ${tb.dtz ?? '?'}</span>
+          </div>`;
+      } else {
+        tbc.innerHTML = '';
+      }
+
+      // Best moves + arrows
+      const bmEl = document.getElementById('best-moves');
+      const bestMoves = data.best_moves || [];
+      const brushColors = ['#22c55e', '#3b82f6', '#eab308'];
+      bmEl.innerHTML = bestMoves.map((m, i) => {
+        const ev = m.mate_in != null ? `#${Math.abs(m.mate_in)}` : (m.eval / 100).toFixed(2);
+        const pv = (m.pv || []).slice(0, 5).join(' ');
+        const dotColor = brushColors[i] || '#9ca3af';
+        return `<div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 text-sm cursor-pointer group">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background:${dotColor}"></span>
+          <span class="font-semibold text-gray-800 w-12">${m.san}</span>
+          <span class="text-gray-500 w-14 text-right font-mono text-xs">${ev}</span>
+          <span class="text-gray-400 text-xs truncate">${pv}</span>
+        </div>`;
+      }).join('');
+
+      showBestMoveArrows(bestMoves);
+
+      // Concepts
+      updateConcepts(data.concepts || data.concepts_after || {}, data.concept_diff || {});
+
+      // Move info
+      if (data.played_move) {
+        const loss = data.eval_loss;
+        const lossStr = loss ? ` (${loss > 0 ? '-' : '+'}${(Math.abs(loss) / 100).toFixed(2)})` : '';
+        document.getElementById('move-info').textContent = `${data.played_move}${lossStr}`;
+      }
+
+      // Coach
+      if (document.getElementById('coach-enabled').checked && data.played_move) {
+        requestComment(data);
+      }
+
+      updateMovesList();
+    }
+
+    function updateEvalBar(cp, mateIn) {
+      let blackPct;
+      if (mateIn !== null && mateIn !== undefined) {
+        blackPct = mateIn > 0 ? 2 : 98;
+      } else {
+        const whitePct = 50 + 50 * (2 / (1 + Math.exp(-cp / 200)) - 1);
+        blackPct = 100 - Math.max(2, Math.min(98, whitePct));
+      }
+      document.getElementById('eval-bar-black').style.height = blackPct + '%';
+
+      const topLabel = document.getElementById('eval-top');
+      const botLabel = document.getElementById('eval-bottom');
+      if (mateIn) {
+        const txt = `#${Math.abs(mateIn)}`;
+        if (mateIn > 0) { botLabel.textContent = txt; topLabel.textContent = ''; }
+        else { topLabel.textContent = txt; botLabel.textContent = ''; }
+      } else {
+        const v = (Math.abs(cp) / 100).toFixed(1);
+        if (cp > 10) { botLabel.textContent = v; topLabel.textContent = ''; }
+        else if (cp < -10) { topLabel.textContent = v; botLabel.textContent = ''; }
+        else { topLabel.textContent = ''; botLabel.textContent = ''; }
+      }
+    }
+
+    function updateConcepts(concepts, diff) {
+      const el = document.getElementById('concepts-display');
+      const paired = [
+        { label: 'King Safety', w: 'king_safety_white', b: 'king_safety_black' },
+        { label: 'Mobility', w: 'mobility_white', b: 'mobility_black' },
+        { label: 'Space', w: 'space_white', b: 'space_black' },
+        { label: 'Threats', w: 'threats_white', b: 'threats_black' },
+        { label: 'Passed Pawns', w: 'passed_pawns_white', b: 'passed_pawns_black' },
+        { label: 'Bishops', w: 'bishops_white', b: 'bishops_black' },
+        { label: 'Knights', w: 'knights_white', b: 'knights_black' },
+        { label: 'Rooks', w: 'rooks_white', b: 'rooks_black' },
+        { label: 'Queens', w: 'queens_white', b: 'queens_black' },
+      ];
+
+      const rows = paired.map(({ label, w, b }) => {
+        const wVal = concepts[w] ?? 0;
+        const bVal = concepts[b] ?? 0;
+        const wDiff = diff[w] || 0;
+        const bDiff = diff[b] || 0;
+
+        const scale = 16;
+        const wPct = Math.min(48, Math.abs(wVal) * scale);
+        const bPct = Math.min(48, Math.abs(bVal) * scale);
+        const bLeft = 50 - bPct;
+
+        const wDiffHtml = wDiff !== 0 ? `<span class="${wDiff > 0 ? 'text-green-600' : 'text-red-500'} text-[10px]">${wDiff > 0 ? '+' : ''}${wDiff.toFixed(1)}</span>` : '';
+        const bDiffHtml = bDiff !== 0 ? `<span class="${bDiff > 0 ? 'text-green-600' : 'text-red-500'} text-[10px]">${bDiff > 0 ? '+' : ''}${bDiff.toFixed(1)}</span>` : '';
+
+        return `<div class="flex items-center gap-2 text-xs">
+          <span class="w-16 text-right text-gray-400">${bDiffHtml}</span>
+          <span class="w-8 text-right text-gray-500 font-mono">${bVal.toFixed(1)}</span>
+          <div class="flex-1 concept-bar-wrap">
+            <div class="concept-bar-seg" style="left:${bLeft}%;width:${bPct}%;background:#374151;opacity:0.7"></div>
+            <div class="concept-bar-seg" style="left:50%;width:${wPct}%;background:#e5e7eb;border:1px solid #9ca3af"></div>
+          </div>
+          <span class="w-8 text-gray-500 font-mono">${wVal.toFixed(1)}</span>
+          <span class="w-16 text-gray-400">${wDiffHtml}</span>
+        </div>
+        <div class="text-center text-[10px] text-gray-400 -mt-0.5 mb-1.5">${label}</div>`;
+      });
+      el.innerHTML = rows.join('');
+    }
+
+    // ─── AI Coach ──────────────────────────────────────────
+    function requestComment(analysis) {
+      send({
+        action: 'comment',
+        analysis: analysis,
+        move_number: Math.ceil(currentPly / 2),
+        lang: lang,
+      });
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      return text
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/\n/g, '<br>');
+    }
+
+    function showComment(data) {
+      const el = document.getElementById('comment-container');
+      const text = typeof data === 'string' ? data : '';
+      if (text) {
+        const rendered = text.startsWith('<span') ? text : renderMarkdown(text);
+        el.innerHTML = `<div class="coach-box bg-blue-50 rounded-lg p-3 text-sm text-gray-700 leading-relaxed">
+          <div class="text-[10px] font-semibold text-blue-500 mb-1 uppercase tracking-wider">${t('coach')}</div>
+          ${rendered}
+        </div>`;
+      } else {
+        el.innerHTML = '';
+      }
+    }
+
+    // ─── Moves List ────────────────────────────────────────
+    function updateMovesList() {
+      const el = document.getElementById('moves-list');
+      let html = '';
+      for (let i = 0; i < gameHistory.length; i++) {
+        const entry = gameHistory[i];
+        const isWhite = (i % 2 === 0);
+        if (isWhite) {
+          html += `<span class="text-gray-400 inline-block w-7 text-right mr-1 text-xs">${Math.floor(i / 2) + 1}.</span>`;
+        }
+        const active = i === currentPly - 1 ? 'active' : '';
+        const q = entry.analysis?.move_quality || '';
+        const markers = { brilliant: '!!', great: '!', inaccuracy: '?!', mistake: '?', blunder: '??' };
+        const marker = markers[q] || '';
+        const qColor = {
+          brilliant: 'text-teal-600', great: 'text-blue-600', best: 'text-green-600',
+          inaccuracy: 'text-yellow-600', mistake: 'text-orange-600', blunder: 'text-red-600',
+        }[q] || '';
+        html += `<span class="move-cell ${active} ${qColor}" data-ply="${i + 1}">${entry.san}${marker}</span> `;
+        if (!isWhite) html += '<br>';
+      }
+      el.innerHTML = html;
+      el.querySelectorAll('.move-cell').forEach(cell => {
+        cell.addEventListener('click', () => goToPly(parseInt(cell.dataset.ply)));
+      });
+    }
+
+    function goToPly(ply) {
+      if (ply < 0) ply = 0;
+      if (ply > gameHistory.length) ply = gameHistory.length;
+
+      chess = new Chess();
+      for (let i = 0; i < ply && i < gameHistory.length; i++) {
+        chess.move(gameHistory[i].san);
+      }
+      currentPly = ply;
+      updateBoard();
+      updateMovesList();
+
+      if (ply === 0) {
+        document.getElementById('eval-display').textContent = '0.00';
+        document.getElementById('eval-display').className = 'text-3xl font-bold font-mono text-gray-400';
+        document.getElementById('quality-container').innerHTML = '';
+        document.getElementById('best-moves').innerHTML = '';
+        document.getElementById('opening-container').innerHTML = '';
+        document.getElementById('tablebase-container').innerHTML = '';
+        document.getElementById('comment-container').innerHTML = '';
+        document.getElementById('move-info').textContent = '';
+        updateEvalBar(0, null);
+        clearArrows();
+        return;
+      }
+
+      const entry = gameHistory[ply - 1];
+      if (entry && entry.analysis) {
+        updateAnalysisDisplay(entry.analysis);
+      } else if (entry) {
+        requestAnalysis();
+      }
+    }
+
+    // ─── Bulk Analysis ─────────────────────────────────────
+    function showBulkProgress() {
+      const el = document.getElementById('bulk-progress');
+      el.classList.remove('hidden');
+      document.getElementById('bulk-label').textContent = t('bulkAnalyzing');
+    }
+
+    function updateBulkProgress() {
+      document.getElementById('bulk-count').textContent = `${bulkDone}/${bulkTotal}`;
+      const pct = bulkTotal > 0 ? (bulkDone / bulkTotal * 100) : 0;
+      document.getElementById('bulk-bar').style.width = pct + '%';
+    }
+
+    function hideBulkProgress() {
+      document.getElementById('bulk-label').textContent = t('bulkDone');
+      setTimeout(() => {
+        document.getElementById('bulk-progress').classList.add('hidden');
+      }, 2000);
+    }
+
+    async function bulkAnalyze() {
+      if (bulkAnalyzing) return;
+      bulkAnalyzing = true;
+      bulkTotal = gameHistory.length;
+      bulkDone = 0;
+      showBulkProgress();
+      updateBulkProgress();
+
+      for (let i = 0; i < gameHistory.length; i++) {
+        if (!bulkAnalyzing) break;
+        const entry = gameHistory[i];
+        if (entry.analysis) {
+          bulkDone++;
+          updateBulkProgress();
+          continue;
+        }
+
+        const historyFens = gameHistory.slice(0, i).map(h => h.fen);
+        send({
+          action: 'analyze',
+          fen: entry.fenBefore,
+          move: entry.move_uci,
+          history: historyFens.slice(-7),
+          depth: 18,
+          bulk_index: i,
+        });
+
+        // Wait for response
+        await new Promise(resolve => {
+          bulkResolve = resolve;
+        });
+
+        bulkDone++;
+        updateBulkProgress();
+      }
+
+      bulkAnalyzing = false;
+      hideBulkProgress();
+      // Refresh display of current ply
+      if (currentPly > 0 && gameHistory[currentPly - 1]?.analysis) {
+        updateAnalysisDisplay(gameHistory[currentPly - 1].analysis);
+      }
+      updateMovesList();
+    }
+
+    function stopBulkAnalysis() {
+      bulkAnalyzing = false;
+      if (bulkResolve) {
+        bulkResolve();
+        bulkResolve = null;
+      }
+    }
+
+    // ─── Navigation ────────────────────────────────────────
+    document.getElementById('btn-start').addEventListener('click', () => goToPly(0));
+    document.getElementById('btn-prev').addEventListener('click', () => { if (currentPly > 0) goToPly(currentPly - 1); });
+    document.getElementById('btn-next').addEventListener('click', () => { if (currentPly < gameHistory.length) goToPly(currentPly + 1); });
+    document.getElementById('btn-end').addEventListener('click', () => goToPly(gameHistory.length));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); if (currentPly > 0) goToPly(currentPly - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); if (currentPly < gameHistory.length) goToPly(currentPly + 1); }
+      if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
+      if (e.key === 'End') { e.preventDefault(); goToPly(gameHistory.length); }
+    });
+
+    // ─── Controls ──────────────────────────────────────────
+    document.getElementById('btn-new').addEventListener('click', () => {
+      stopBulkAnalysis();
+      chess = new Chess();
+      gameHistory = [];
+      currentPly = 0;
+      updateBoard();
+      updateMovesList();
+      goToPly(0);
+    });
+
+    document.getElementById('btn-flip').addEventListener('click', () => {
+      orientation = orientation === 'white' ? 'black' : 'white';
+      ground.set({ orientation });
+    });
+
+    document.getElementById('mode-select').addEventListener('change', (e) => {
+      mode = e.target.value;
+      document.getElementById('skill-select').classList.toggle('hidden', !mode.startsWith('play'));
+      updateBoard();
+      if (mode === 'play-black' && chess.turn() === 'w' && gameHistory.length === 0) {
+        requestBotMove();
+      }
+    });
+
+    document.getElementById('skill-select').addEventListener('change', (e) => {
+      skillLevel = parseInt(e.target.value);
+    });
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.remove('border-blue-500', 'text-blue-600');
+          b.classList.add('border-transparent', 'text-gray-400');
+        });
+        btn.classList.remove('border-transparent', 'text-gray-400');
+        btn.classList.add('border-blue-500', 'text-blue-600');
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+        document.getElementById(`panel-${btn.dataset.tab}`).classList.remove('hidden');
+      });
+    });
+
+    // ─── Import ────────────────────────────────────────────
+    document.getElementById('btn-import').addEventListener('click', () => {
+      document.getElementById('import-modal').classList.remove('hidden');
+      document.getElementById('import-modal').classList.add('flex');
+    });
+    document.getElementById('import-close').addEventListener('click', closeImportModal);
+    document.getElementById('import-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeImportModal();
+    });
+
+    function closeImportModal() {
+      document.getElementById('import-modal').classList.add('hidden');
+      document.getElementById('import-modal').classList.remove('flex');
+    }
+
+    const importPanels = ['lichess', 'chesscom', 'pgn'];
+    importPanels.forEach(src => {
+      document.getElementById(`import-${src}-btn`).addEventListener('click', () => {
+        importPanels.forEach(s => {
+          document.getElementById(`import-${s}-panel`).classList.toggle('hidden', s !== src);
+          const btn = document.getElementById(`import-${s}-btn`);
+          if (s === src) {
+            if (s === 'chesscom') {
+              btn.className = 'flex-1 py-2 text-sm rounded-lg bg-green-600 text-white font-medium';
+            } else {
+              btn.className = 'flex-1 py-2 text-sm rounded-lg bg-gray-900 text-white font-medium';
+            }
+          } else {
+            btn.className = 'flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition';
+          }
+        });
+      });
+    });
+
+    document.getElementById('lichess-fetch').addEventListener('click', () => {
+      const u = document.getElementById('lichess-username').value.trim();
+      if (u) {
+        document.getElementById('game-list').innerHTML = `<div class="flex items-center justify-center py-4 text-gray-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin mr-2"></span> ${t('loading')}</div>`;
+        send({ action: 'import_lichess', username: u, max: 20 });
+      }
+    });
+    document.getElementById('chesscom-fetch').addEventListener('click', () => {
+      const u = document.getElementById('chesscom-username').value.trim();
+      if (u) {
+        document.getElementById('game-list').innerHTML = `<div class="flex items-center justify-center py-4 text-gray-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-gray-300 border-t-green-500 rounded-full animate-spin mr-2"></span> ${t('loading')}</div>`;
+        send({ action: 'import_chesscom', username: u, max: 20 });
+      }
+    });
+
+    // Enter key in username fields
+    document.getElementById('lichess-username').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('lichess-fetch').click();
+    });
+    document.getElementById('chesscom-username').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('chesscom-fetch').click();
+    });
+
+    document.getElementById('pgn-load').addEventListener('click', () => {
+      const pgn = document.getElementById('pgn-input').value.trim();
+      if (pgn) {
+        loadPGN(pgn);
+        closeImportModal();
+      }
+    });
+
+    function showImportedGames(data) {
+      const el = document.getElementById('game-list');
+      if (data.error) {
+        el.innerHTML = `<p class="text-red-500 text-sm py-2">${data.error}</p>`;
+        return;
+      }
+      if (!data.games || data.games.length === 0) {
+        el.innerHTML = `<p class="text-gray-400 text-sm py-2">${t('noGames')}</p>`;
+        return;
+      }
+      el.innerHTML = data.games.map((g, i) => {
+        const resultIcon = g.result === 'white' ? '1-0' : g.result === 'black' ? '0-1' : g.result === 'draw' ? '½-½' : g.result;
+        const resultColor = g.result === 'white' ? 'text-gray-800' : g.result === 'black' ? 'text-gray-500' : 'text-gray-400';
+        const dateStr = g.date ? new Date(typeof g.date === 'number' ? g.date * 1000 : g.date).toLocaleDateString() : '';
+        return `
+        <div class="game-item p-2.5 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition" data-idx="${i}">
+          <div class="flex items-center justify-between">
+            <div class="font-medium text-sm text-gray-800">${g.white} <span class="text-gray-400 text-xs">${g.white_rating || ''}</span>
+              <span class="text-gray-400 mx-1">vs</span>
+              ${g.black} <span class="text-gray-400 text-xs">${g.black_rating || ''}</span>
+            </div>
+            <span class="font-bold text-sm ${resultColor}">${resultIcon}</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+            ${g.opening ? `<span class="text-gray-500">${g.opening}</span>` : ''}
+            ${g.speed ? `<span class="bg-gray-100 px-1.5 py-0.5 rounded">${g.speed}</span>` : ''}
+            ${dateStr ? `<span>${dateStr}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+      window._importedGames = data.games;
+      el.querySelectorAll('.game-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const game = data.games[parseInt(item.dataset.idx)];
+          if (game.pgn) {
+            loadPGN(game.pgn);
+            closeImportModal();
+          }
+        });
+      });
+    }
+
+    function loadPGN(pgn) {
+      stopBulkAnalysis();
+      const tempChess = new Chess();
+      tempChess.loadPgn(pgn);
+      const moves = tempChess.history({ verbose: true });
+
+      chess = new Chess();
+      gameHistory = [];
+      currentPly = 0;
+
+      for (const move of moves) {
+        const fenBefore = chess.fen();
+        chess.move(move.san);
+        gameHistory.push({
+          fen: chess.fen(),
+          fenBefore: fenBefore,
+          san: move.san,
+          move_uci: move.from + move.to + (move.promotion || ''),
+          analysis: null,
+        });
+      }
+
+      chess = new Chess();
+      currentPly = 0;
+      updateBoard();
+      updateMovesList();
+      clearArrows();
+
+      // Auto-analyze
+      if (gameHistory.length > 0) {
+        setTimeout(() => bulkAnalyze(), 300);
+      }
+    }
+
+    // ─── Language ──────────────────────────────────────────
+    document.getElementById('lang-select').addEventListener('change', (e) => {
+      lang = e.target.value;
+      applyI18n();
+    });
+
+    // ─── Init ──────────────────────────────────────────────
+    computeBoardSize();
+    applyI18n();
+    initBoard();
+    connectWS();
+  </script>
+</body>
+</html>
