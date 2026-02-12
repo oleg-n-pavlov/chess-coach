@@ -8,12 +8,15 @@ Serves the frontend and provides API for:
 - Commentary generation (Claude Haiku)
 - Game import from Lichess/Chess.com
 - Play against computer (Stockfish with Skill Level)
+- Save/load analysis results
 """
 
 import asyncio
 import json
 import os
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -30,14 +33,8 @@ from fastapi.staticfiles import StaticFiles
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from commentary_generator import CommentaryGenerator, format_eval, format_concept_changes
-from concept_extractor import LeelaConceptExtractor
-from opening_book import OpeningBook
-from tablebase import Tablebase
-from position_analyzer import (
-    _score_to_cp, _score_to_mate, _classify_move, _is_sacrifice,
-    _top_concept_changes, PIECE_VALUES,
-)
+from commentary_generator import CommentaryGenerator
+from position_analyzer import PositionAnalyzer
 
 app = FastAPI(title="Chess Coach")
 
@@ -45,11 +42,12 @@ app = FastAPI(title="Chess Coach")
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Global engine instances (initialized on first connection)
-_engine: chess.engine.SimpleEngine | None = None
-_concept_extractor: LeelaConceptExtractor | None = None
-_opening_book = OpeningBook()
-_tablebase = Tablebase()
+# Saved analyses directory
+ANALYSES_DIR = Path(__file__).parent.parent / "data" / "analyses"
+ANALYSES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Global instances (initialized on first connection)
+_analyzer: PositionAnalyzer | None = None
 _commentator: CommentaryGenerator | None = None
 
 STOCKFISH_PATH = "/opt/homebrew/bin/stockfish"
@@ -57,18 +55,15 @@ LEELA_MODEL = Path(__file__).parent.parent / "models" / "t78_with_intermediate.o
 SVM_DIR = Path(__file__).parent.parent / "models" / "svm"
 
 
-def _get_engine():
-    global _engine
-    if _engine is None:
-        _engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-    return _engine
-
-
-def _get_concept_extractor():
-    global _concept_extractor
-    if _concept_extractor is None:
-        _concept_extractor = LeelaConceptExtractor(str(LEELA_MODEL), str(SVM_DIR))
-    return _concept_extractor
+def _get_analyzer():
+    global _analyzer
+    if _analyzer is None:
+        _analyzer = PositionAnalyzer(
+            stockfish_path=STOCKFISH_PATH,
+            leela_model=str(LEELA_MODEL),
+            svm_dir=str(SVM_DIR),
+        )
+    return _analyzer
 
 
 def _get_commentator(model: str = "claude-haiku-4-5-20251001"):
@@ -105,14 +100,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     result = {"comment": f"[Error: {exc}]", "move_number": data.get("move_number", 1)}
                 await websocket.send_json({"type": "comment", "data": result})
 
-            elif action == "opening":
-                result = await asyncio.to_thread(_lookup_opening, data)
-                await websocket.send_json({"type": "opening", "data": result})
-
-            elif action == "tablebase":
-                result = await asyncio.to_thread(_probe_tablebase, data)
-                await websocket.send_json({"type": "tablebase", "data": result})
-
             elif action == "bot_move":
                 result = await asyncio.to_thread(_get_bot_move, data)
                 await websocket.send_json({"type": "bot_move", "data": result})
@@ -125,134 +112,109 @@ async def websocket_endpoint(websocket: WebSocket):
                 result = await asyncio.to_thread(_import_chesscom, data)
                 await websocket.send_json({"type": "import", "data": result})
 
+            elif action == "save_analysis":
+                result = await asyncio.to_thread(_save_analysis, data)
+                await websocket.send_json({"type": "saved", "data": result})
+
+            elif action == "load_analysis":
+                result = await asyncio.to_thread(_load_analysis, data)
+                await websocket.send_json({"type": "loaded", "data": result})
+
+            elif action == "list_analyses":
+                result = await asyncio.to_thread(_list_analyses)
+                await websocket.send_json({"type": "analysis_list", "data": result})
+
     except WebSocketDisconnect:
         pass
 
 
 def _analyze_position(data: dict) -> dict:
-    """Analyze a position: Stockfish eval + concepts."""
+    """Analyze a position using PositionAnalyzer (Stockfish + Leela concepts)."""
     fen = data.get("fen", chess.STARTING_FEN)
     played_uci = data.get("move")  # UCI format, e.g. "e2e4"
     history_fens = data.get("history", [])
-    depth = data.get("depth", 18)
 
     board = chess.Board(fen)
-    engine = _get_engine()
+    analyzer = _get_analyzer()
 
     # Build history
-    history = []
-    for h_fen in history_fens[-7:]:
-        history.append(chess.Board(h_fen))
+    history = [chess.Board(h) for h in history_fens[-7:]] if history_fens else None
 
-    # Stockfish analysis
-    sf_info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+    # Parse played move
+    played_move = chess.Move.from_uci(played_uci) if played_uci else None
 
-    best_moves = []
-    for info in sf_info:
-        pv = info.get("pv", [])
-        score = info.get("score")
-        if pv and score:
-            pv_san = []
-            pv_board = board.copy()
-            for m in pv[:5]:
-                try:
-                    pv_san.append(pv_board.san(m))
-                    pv_board.push(m)
-                except (AssertionError, ValueError):
-                    break
-            best_moves.append({
-                "move": pv[0].uci(),
-                "san": board.san(pv[0]),
-                "eval": _score_to_cp(score, board.turn),
-                "mate_in": _score_to_mate(score, board.turn),
-                "pv": pv_san if pv_san else [board.san(pv[0])],
-            })
+    # Run analysis
+    raw_result = analyzer.analyze(board, played_move, history)
 
-    # Concepts
-    extractor = _get_concept_extractor()
-    concepts = extractor.get_concepts(board, history if history else None)
-    # Remove raw_vector if present
-    if "raw_vector" in concepts:
-        concepts = {}
+    # Convert to JSON-serializable format
+    result = _serialize_analysis(raw_result)
+    return result
 
+
+def _serialize_analysis(raw: dict) -> dict:
+    """Convert PositionAnalyzer output to JSON-serializable dict.
+
+    The main issue is that best_moves[i]["move"] is a chess.Move object,
+    and concepts_before may contain numpy arrays.
+    """
     result = {
-        "fen": fen,
-        "best_moves": best_moves,
-        "concepts": concepts,
-        "eval": best_moves[0]["eval"] if best_moves else 0,
-        "mate_in": best_moves[0]["mate_in"] if best_moves else None,
+        "fen": raw.get("fen", ""),
     }
 
-    # If a move was played, classify it
-    if played_uci:
-        played_move = chess.Move.from_uci(played_uci)
-        played_san = board.san(played_move)
+    # Best moves: convert chess.Move to UCI string
+    best_moves = []
+    for bm in raw.get("best_moves", []):
+        best_moves.append({
+            "move": bm["move"].uci() if hasattr(bm["move"], "uci") else str(bm["move"]),
+            "san": bm.get("san", ""),
+            "eval": bm.get("eval", 0),
+            "mate_in": bm.get("mate_in"),
+            "pv": bm.get("pv", []),
+        })
+    result["best_moves"] = best_moves
+    result["eval"] = best_moves[0]["eval"] if best_moves else 0
+    result["mate_in"] = best_moves[0]["mate_in"] if best_moves else None
 
-        played_eval = None
-        played_mate = None
-        is_best = False
+    # Concepts (before move)
+    concepts = raw.get("concepts_before", {})
+    if "raw_vector" in concepts:
+        concepts = {}
+    result["concepts"] = {k: round(float(v), 3) for k, v in concepts.items()}
 
-        for bm in best_moves:
-            if bm["move"] == played_uci:
-                played_eval = bm["eval"]
-                played_mate = bm["mate_in"]
-                is_best = (bm == best_moves[0])
-                break
+    # Opening info
+    if raw.get("opening"):
+        result["opening"] = raw["opening"]
 
-        if played_eval is None:
-            board_after = board.copy()
-            board_after.push(played_move)
-            info = engine.analyse(board_after, chess.engine.Limit(depth=depth))
-            score = info.get("score")
-            if score:
-                played_eval = _score_to_cp(score, board_after.turn)
+    # Tablebase
+    if raw.get("tablebase"):
+        result["tablebase"] = raw["tablebase"]
 
-        best_eval = best_moves[0]["eval"] if best_moves else 0
-        eval_loss = (best_eval - played_eval) if played_eval is not None else 0
-
-        # Concepts after
-        board_after = board.copy()
-        board_after.push(played_move)
-        concepts_after = extractor.get_concepts(board_after, [board.copy()] + history[:6])
+    # Played move data
+    if "played_move" in raw:
+        concepts_after = raw.get("concepts_after", {})
         if "raw_vector" in concepts_after:
             concepts_after = {}
 
-        concept_diff = {}
-        for key in concepts:
-            if key in concepts_after:
-                concept_diff[key] = round(concepts_after[key] - concepts[key], 3)
-
-        # Opening info for classification
-        opening_info = _opening_book.lookup(board)
-
-        move_quality = _classify_move(
-            board, played_move, eval_loss, is_best,
-            # Convert best_moves back to internal format for _classify_move
-            [{"move": chess.Move.from_uci(bm["move"]), "eval": bm["eval"]} for bm in best_moves],
-            opening_info, played_mate,
-        )
+        concept_diff = raw.get("concept_diff", {})
+        if "raw_vector_diff" in concept_diff:
+            concept_diff = {}
 
         result.update({
-            "played_move": played_san,
-            "played_eval": played_eval,
-            "played_mate_in": played_mate,
-            "eval_loss": eval_loss,
-            "move_quality": move_quality,
-            "is_best": is_best,
-            "concepts_after": concepts_after,
-            "concept_diff": concept_diff,
-            "key_concepts": _top_concept_changes(concept_diff),
+            "played_move": raw["played_move"],
+            "played_eval": raw.get("played_eval"),
+            "played_mate_in": raw.get("played_mate_in"),
+            "best_eval": raw.get("best_eval", 0),
+            "eval_loss": raw.get("eval_loss", 0),
+            "move_quality": raw.get("move_quality", ""),
+            "is_best": raw.get("is_best", False),
+            "concepts_after": {k: round(float(v), 3) for k, v in concepts_after.items()},
+            "concept_diff": {k: round(float(v), 3) for k, v in concept_diff.items()},
+            "key_concepts": raw.get("key_concepts", []),
+            # Tactical motifs
+            "tactics_in_best_line": raw.get("tactics_in_best_line", []),
+            "tactics_in_played_line": raw.get("tactics_in_played_line", []),
+            "tactics_current": raw.get("tactics_current", []),
         })
-
-    # Opening
-    opening = _opening_book.lookup(board)
-    if opening:
-        result["opening"] = opening
-
-    # Tablebase
-    tb = _tablebase.probe(board)
-    if tb:
-        result["tablebase"] = tb
 
     return result
 
@@ -267,24 +229,13 @@ def _generate_comment(data: dict) -> dict:
     lang = data.get("lang", "ru")
 
     commentator = _get_commentator()
-    comment = commentator.comment_move(analysis, move_number, lang=lang, force=True)
-    return {"comment": comment, "move_number": move_number}
-
-
-def _lookup_opening(data: dict) -> dict:
-    """Look up opening information."""
-    fen = data.get("fen", chess.STARTING_FEN)
-    board = chess.Board(fen)
-    info = _opening_book.lookup(board)
-    return info or {}
-
-
-def _probe_tablebase(data: dict) -> dict:
-    """Probe endgame tablebase."""
-    fen = data.get("fen", chess.STARTING_FEN)
-    board = chess.Board(fen)
-    info = _tablebase.probe(board)
-    return info or {}
+    result = commentator.comment_move(analysis, move_number, lang=lang, force=True)
+    # comment_move now returns {"comment": str, "prompt": str}
+    return {
+        "comment": result["comment"],
+        "prompt": result["prompt"],
+        "move_number": move_number,
+    }
 
 
 def _get_bot_move(data: dict) -> dict:
@@ -294,13 +245,12 @@ def _get_bot_move(data: dict) -> dict:
     time_limit = data.get("time", 1.0)
 
     board = chess.Board(fen)
-    engine = _get_engine()
+    analyzer = _get_analyzer()
+    engine = analyzer.engine
 
     # Set skill level
     engine.configure({"Skill Level": skill})
-
     result = engine.play(board, chess.engine.Limit(time=time_limit))
-
     # Reset skill level
     engine.configure({"Skill Level": 20})
 
@@ -345,7 +295,7 @@ def _import_lichess(data: dict) -> dict:
                     "speed": game.get("speed", ""),
                     "date": game.get("createdAt", ""),
                 })
-        return {"games": games}
+        return {"games": games, "username": username}
     except Exception as e:
         return {"error": str(e), "games": []}
 
@@ -400,9 +350,80 @@ def _import_chesscom(data: dict) -> dict:
             if len(games) >= max_games:
                 break
 
-        return {"games": games[:max_games]}
+        return {"games": games[:max_games], "username": username}
     except Exception as e:
         return {"error": str(e), "games": []}
+
+
+# ─── Save/Load Analysis ─────────────────────────────────────────
+
+def _save_analysis(data: dict) -> dict:
+    """Save analysis results to disk."""
+    game_data = data.get("game_data", {})
+    if not game_data:
+        return {"error": "No game data to save"}
+
+    analysis_id = str(uuid.uuid4())[:8]
+    metadata = game_data.get("metadata", {})
+
+    save_data = {
+        "id": analysis_id,
+        "saved_at": datetime.now().isoformat(),
+        "metadata": metadata,
+        "moves": game_data.get("moves", []),
+    }
+
+    filepath = ANALYSES_DIR / f"{analysis_id}.json"
+    with open(filepath, "w") as f:
+        json.dump(save_data, f, ensure_ascii=False, indent=2)
+
+    return {
+        "id": analysis_id,
+        "title": _analysis_title(metadata),
+        "saved_at": save_data["saved_at"],
+    }
+
+
+def _load_analysis(data: dict) -> dict:
+    """Load a saved analysis from disk."""
+    analysis_id = data.get("id", "")
+    filepath = ANALYSES_DIR / f"{analysis_id}.json"
+
+    if not filepath.exists():
+        return {"error": f"Analysis {analysis_id} not found"}
+
+    with open(filepath) as f:
+        return json.load(f)
+
+
+def _list_analyses() -> dict:
+    """List all saved analyses."""
+    analyses = []
+    for filepath in sorted(ANALYSES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
+            metadata = data.get("metadata", {})
+            analyses.append({
+                "id": data.get("id", filepath.stem),
+                "title": _analysis_title(metadata),
+                "saved_at": data.get("saved_at", ""),
+                "white": metadata.get("white", "?"),
+                "black": metadata.get("black", "?"),
+                "result": metadata.get("result", ""),
+                "num_moves": len(data.get("moves", [])),
+            })
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return {"analyses": analyses}
+
+
+def _analysis_title(metadata: dict) -> str:
+    """Generate a title for a saved analysis."""
+    white = metadata.get("white", "?")
+    black = metadata.get("black", "?")
+    result = metadata.get("result", "")
+    return f"{white} vs {black}" + (f" ({result})" if result else "")
 
 
 if __name__ == "__main__":

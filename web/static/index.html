@@ -27,7 +27,7 @@
     #board { width: var(--board-size); height: var(--board-size); }
 
     /* Eval bar */
-    .eval-bar { width: 30px; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+    .eval-bar { width: 28px; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
     .eval-bar-fill { position: absolute; bottom: 0; width: 100%; background: #ece5d8; transition: height 0.5s cubic-bezier(0.4,0,0.2,1); }
     .eval-bar-black { position: absolute; top: 0; width: 100%; background: #3a3a3a; transition: height 0.5s cubic-bezier(0.4,0,0.2,1); }
     .eval-bar-label { position: absolute; width: 100%; text-align: center; font-size: 9px; font-weight: 700; z-index: 1; font-family: monospace; }
@@ -74,9 +74,15 @@
     .progress-bar-fill { height: 100%; background: #3b82f6; transition: width 0.3s ease; }
 
     /* Nav button */
-    .nav-btn { width: 40px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 16px; transition: background 0.15s; user-select: none; cursor: pointer; color: #d1d5db; }
-    .nav-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-    .nav-btn:active { background: rgba(255,255,255,0.2); }
+    .nav-btn { width: 36px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; transition: background 0.15s; user-select: none; cursor: pointer; color: #9ca3af; }
+    .nav-btn:hover { background: rgba(255,255,255,0.1); color: #e5e7eb; }
+    .nav-btn:active { background: rgba(255,255,255,0.15); }
+    .nav-btn svg { width: 16px; height: 16px; }
+
+    /* Pill tabs */
+    .tab-pill { padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; color: #78716c; }
+    .tab-pill:hover { color: #57534e; }
+    .tab-pill.active { background: #fff; color: #292524; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
   </style>
 </head>
 <body class="bg-stone-800 text-gray-800 h-screen flex flex-col overflow-hidden">
@@ -88,8 +94,9 @@
       <span class="text-[10px] text-stone-500 uppercase tracking-widest">AI Trainer</span>
     </div>
     <div class="flex items-center gap-2">
-      <button id="btn-new" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">New Game</button>
+      <button id="btn-new" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">New</button>
       <button id="btn-import" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">Import</button>
+      <button id="btn-save" class="px-3 py-1 text-xs bg-stone-700 hover:bg-stone-600 text-stone-200 rounded border border-stone-600 transition">Save</button>
       <select id="mode-select" class="px-2 py-1 text-xs bg-stone-700 text-stone-200 border border-stone-600 rounded">
         <option value="analysis">Analysis</option>
         <option value="play-white">Play as White</option>
@@ -140,25 +147,37 @@
         <div id="board" class="rounded shadow-xl"></div>
       </div>
 
-      <!-- Nav buttons + flip -->
-      <div class="flex items-center gap-1 mt-2">
-        <button id="btn-start" class="nav-btn" title="Start">&#x23EE;</button>
-        <button id="btn-prev" class="nav-btn" title="Previous">&#x25C0;</button>
-        <button id="btn-next" class="nav-btn" title="Next">&#x25B6;</button>
-        <button id="btn-end" class="nav-btn" title="End">&#x23ED;</button>
+      <!-- Nav buttons -->
+      <div class="flex items-center gap-0.5 mt-2">
+        <button id="btn-start" class="nav-btn" title="Start">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><polyline points="14 4 8 12 14 20"/></svg>
+        </button>
+        <button id="btn-prev" class="nav-btn" title="Previous">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 4 9 12 15 20"/></svg>
+        </button>
+        <button id="btn-next" class="nav-btn" title="Next">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 4 15 12 9 20"/></svg>
+        </button>
+        <button id="btn-end" class="nav-btn" title="End">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 4 16 12 10 20"/><line x1="18" y1="4" x2="18" y2="20"/></svg>
+        </button>
         <div class="w-px h-5 bg-stone-600 mx-2"></div>
-        <button id="btn-flip" class="nav-btn" title="Flip board">&#x21C5;</button>
+        <button id="btn-flip" class="nav-btn" title="Flip board">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 4 7 10 1 10"/><polyline points="17 20 17 14 23 14"/><path d="M21 10A9 9 0 003.2 7.2L1 10"/><path d="M3 14a9 9 0 0017.8 2.8L23 14"/></svg>
+        </button>
       </div>
       <div id="move-info" class="text-xs text-stone-400 h-4 mt-1"></div>
     </div>
 
     <!-- Right Panel -->
-    <div class="flex-1 flex flex-col bg-white min-w-0">
-      <!-- Tabs -->
-      <div class="flex border-b border-gray-200 shrink-0">
-        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-blue-500 text-blue-600" data-tab="analysis">Analysis</button>
-        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600" data-tab="concepts">Concepts</button>
-        <button class="tab-btn px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600" data-tab="moves">Moves</button>
+    <div class="flex-1 flex flex-col bg-stone-50 border-l border-stone-200 min-w-0">
+      <!-- Tabs (pill style) -->
+      <div class="shrink-0 px-4 pt-3 pb-2">
+        <div class="bg-stone-200/60 rounded-lg p-0.5 inline-flex gap-0.5">
+          <button class="tab-pill active" data-tab="analysis">Analysis</button>
+          <button class="tab-pill" data-tab="concepts">Concepts</button>
+          <button class="tab-pill" data-tab="moves">Moves</button>
+        </div>
       </div>
 
       <!-- Tab Content -->
@@ -179,14 +198,14 @@
 
           <!-- Best Moves / Engine Lines -->
           <div>
-            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5" data-i18n="engineLines">Engine Lines</div>
+            <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-1.5" data-i18n="engineLines">Engine Lines</div>
             <div id="best-moves" class="space-y-0.5"></div>
           </div>
 
           <!-- Coach -->
-          <div class="flex items-center gap-2 pt-3 border-t border-gray-100">
+          <div class="flex items-center gap-2 pt-3 border-t border-stone-200">
             <input type="checkbox" id="coach-enabled" class="rounded text-blue-500 w-4 h-4">
-            <label for="coach-enabled" class="text-sm text-gray-600 cursor-pointer" data-i18n="coach">AI Coach</label>
+            <label for="coach-enabled" class="text-sm text-stone-600 cursor-pointer" data-i18n="coach">AI Coach</label>
           </div>
           <div id="comment-container"></div>
         </div>
@@ -194,13 +213,18 @@
         <!-- Concepts Tab -->
         <div id="panel-concepts" class="tab-panel p-4 hidden">
           <div class="flex items-center justify-between mb-3">
-            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider" data-i18n="positionConcepts">Position Concepts</div>
+            <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider" data-i18n="positionConcepts">Position Concepts</div>
             <div class="flex items-center gap-3 text-xs">
               <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-white border border-gray-300 inline-block"></span> <span data-i18n-inline="white">White</span></span>
               <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-gray-800 inline-block"></span> <span data-i18n-inline="black">Black</span></span>
             </div>
           </div>
           <div id="concepts-display" class="space-y-1.5"></div>
+          <!-- Tactics Section -->
+          <div id="tactics-display" class="mt-4 hidden">
+            <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Tactics</div>
+            <div id="tactics-list" class="space-y-1.5"></div>
+          </div>
         </div>
 
         <!-- Moves Tab -->
@@ -218,23 +242,40 @@
         <h2 class="text-lg font-bold text-gray-800" data-i18n="importGame">Import Game</h2>
         <button id="import-close" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
       </div>
+
+      <!-- Source tabs -->
       <div class="flex gap-2 mb-4">
         <button id="import-lichess-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800 transition">Lichess</button>
         <button id="import-chesscom-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition">Chess.com</button>
         <button id="import-pgn-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition">PGN</button>
+        <button id="import-history-btn" class="flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition">History</button>
       </div>
+
+      <!-- Lichess panel -->
       <div id="import-lichess-panel">
         <input type="text" id="lichess-username" placeholder="Lichess username" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
         <button id="lichess-fetch" class="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition">Load Games</button>
       </div>
+
+      <!-- Chess.com panel -->
       <div id="import-chesscom-panel" class="hidden">
         <input type="text" id="chesscom-username" placeholder="Chess.com username" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-green-400">
         <button id="chesscom-fetch" class="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">Load Games</button>
       </div>
+
+      <!-- PGN panel -->
       <div id="import-pgn-panel" class="hidden">
         <textarea id="pgn-input" rows="8" placeholder="Paste PGN here..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
         <button id="pgn-load" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-i18n="loadPgn">Load PGN</button>
       </div>
+
+      <!-- History panel (saved analyses) -->
+      <div id="import-history-panel" class="hidden">
+        <div id="history-list" class="space-y-1 max-h-[400px] overflow-y-auto">
+          <div class="text-sm text-gray-400 py-4 text-center">Loading...</div>
+        </div>
+      </div>
+
       <div id="game-list" class="mt-3 space-y-1 max-h-[300px] overflow-y-auto"></div>
     </div>
   </div>
@@ -247,7 +288,7 @@
     // ─── i18n ──────────────────────────────────────────────
     const I18N = {
       ru: {
-        newGame: 'Новая', import_: 'Импорт', flip: 'Перевернуть',
+        newGame: 'Новая', import_: 'Импорт', save: 'Сохранить', flip: 'Перевернуть',
         analysis: 'Анализ', concepts: 'Концепты', moves: 'Ходы',
         engineLines: 'Линии движка', coach: 'AI Тренер', positionConcepts: 'Концепты позиции',
         white: 'Белые', black: 'Чёрные', analyzing: 'Анализирую...',
@@ -255,9 +296,12 @@
         close: 'Закрыть', noGames: 'Партий не найдено', loading: 'Загрузка...',
         playWhite: 'Играть белыми', playBlack: 'Играть чёрными',
         bulkAnalyzing: 'Анализ партии...', bulkDone: 'Анализ завершён',
+        history: 'История', noHistory: 'Нет сохранённых партий',
+        saved: 'Сохранено!', showPrompt: 'Промпт', hidePrompt: 'Скрыть',
+        won: 'Победа', lost: 'Поражение', draw: 'Ничья',
       },
       en: {
-        newGame: 'New', import_: 'Import', flip: 'Flip',
+        newGame: 'New', import_: 'Import', save: 'Save', flip: 'Flip',
         analysis: 'Analysis', concepts: 'Concepts', moves: 'Moves',
         engineLines: 'Engine Lines', coach: 'AI Coach', positionConcepts: 'Position Concepts',
         white: 'White', black: 'Black', analyzing: 'Analyzing...',
@@ -265,6 +309,9 @@
         close: 'Close', noGames: 'No games found', loading: 'Loading...',
         playWhite: 'Play as White', playBlack: 'Play as Black',
         bulkAnalyzing: 'Analyzing game...', bulkDone: 'Analysis complete',
+        history: 'History', noHistory: 'No saved analyses',
+        saved: 'Saved!', showPrompt: 'Prompt', hidePrompt: 'Hide',
+        won: 'Won', lost: 'Lost', draw: 'Draw',
       },
     };
     let lang = 'ru';
@@ -273,7 +320,8 @@
     function applyI18n() {
       document.getElementById('btn-new').textContent = t('newGame');
       document.getElementById('btn-import').textContent = t('import_');
-      document.querySelectorAll('.tab-btn').forEach(b => {
+      document.getElementById('btn-save').textContent = t('save');
+      document.querySelectorAll('.tab-pill').forEach(b => {
         const tab = b.dataset.tab;
         if (tab === 'analysis') b.textContent = t('analysis');
         if (tab === 'concepts') b.textContent = t('concepts');
@@ -300,15 +348,22 @@
     let mode = 'analysis';
     let skillLevel = 5;
     let orientation = 'white';
-    let gameHistory = []; // [{fen, fenBefore, san, move_uci, analysis}]
+    let gameHistory = []; // [{fen, fenBefore, san, move_uci, analysis, comment}]
     let currentPly = 0;
     let analyzing = false;
+    let commentLoading = false;
+    let lastCommentPly = -1;
+
+    // Game metadata (from import or PGN headers)
+    let gameMetadata = {};
+    // Searched username for import highlighting
+    let importUsername = '';
 
     // Bulk analysis state
     let bulkAnalyzing = false;
     let bulkTotal = 0;
     let bulkDone = 0;
-    let bulkResolve = null; // resolve function for current bulk analysis promise
+    let bulkResolve = null;
 
     // ─── Board Sizing ────────────────────────────────────
     function computeBoardSize() {
@@ -321,12 +376,11 @@
       const padding = 40;
       const maxByHeight = vh - headerH - navH - progressH - infoH - padding;
       const minPanelWidth = 380;
-      const evalBarW = 30;
-      const boardPadding = 52; // px-6 * 2 + gap
+      const evalBarW = 28;
+      const boardPadding = 52;
       const maxByWidth = vw - minPanelWidth - evalBarW - boardPadding;
       const size = Math.max(320, Math.min(maxByHeight, maxByWidth, 780));
       document.documentElement.style.setProperty('--board-size', size + 'px');
-      // Also set eval bar height
       const evalBar = document.getElementById('eval-bar-wrap');
       if (evalBar) evalBar.style.height = size + 'px';
     }
@@ -352,18 +406,15 @@
     function handleWSMessage(msg) {
       if (msg.type === 'analysis') {
         analyzing = false;
-        // If bulk analysis response, store by index
         if (msg.data._bulk_index !== undefined) {
           const idx = msg.data._bulk_index;
           delete msg.data._bulk_index;
           if (idx < gameHistory.length) {
             gameHistory[idx].analysis = msg.data;
           }
-          // If this is the currently viewed move, update display
           if (idx === currentPly - 1) {
             updateAnalysisDisplay(msg.data);
           }
-          // Resolve bulk promise
           if (bulkResolve) {
             bulkResolve();
             bulkResolve = null;
@@ -373,14 +424,18 @@
         }
       }
       else if (msg.type === 'comment') {
+        commentLoading = false;
         if (msg.data.error) {
-          showComment(`<span class="text-amber-600 text-xs">${msg.data.error}</span>`);
+          showComment({ comment: '', error: msg.data.error });
         } else {
-          showComment(msg.data.comment);
+          showComment(msg.data);
         }
       }
       else if (msg.type === 'bot_move') { makeBotMove(msg.data); }
       else if (msg.type === 'import') { showImportedGames(msg.data); }
+      else if (msg.type === 'saved') { showSavedConfirmation(msg.data); }
+      else if (msg.type === 'loaded') { loadSavedAnalysis(msg.data); }
+      else if (msg.type === 'analysis_list') { showAnalysisList(msg.data); }
     }
 
     // ─── Board ─────────────────────────────────────────────
@@ -467,6 +522,7 @@
         san: move.san,
         move_uci: from + to + (move.promotion || ''),
         analysis: null,
+        comment: null,
       });
       currentPly = gameHistory.length;
 
@@ -474,7 +530,6 @@
       updateMovesList();
       requestAnalysis();
 
-      // Bot's turn?
       if (mode === 'play-white' && chess.turn() === 'b') requestBotMove();
       else if (mode === 'play-black' && chess.turn() === 'w') requestBotMove();
     }
@@ -500,7 +555,7 @@
         `<span class="inline-block w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>`;
       document.getElementById('quality-container').innerHTML = '';
       document.getElementById('best-moves').innerHTML =
-        `<div class="text-sm text-gray-400 py-2">${t('analyzing')}</div>`;
+        `<div class="text-sm text-stone-400 py-2">${t('analyzing')}</div>`;
       clearArrows();
     }
 
@@ -522,6 +577,7 @@
         san: move.san,
         move_uci: data.move,
         analysis: null,
+        comment: null,
       });
       currentPly = gameHistory.length;
 
@@ -612,7 +668,7 @@
         const ev = m.mate_in != null ? `#${Math.abs(m.mate_in)}` : (m.eval / 100).toFixed(2);
         const pv = (m.pv || []).slice(0, 5).join(' ');
         const dotColor = brushColors[i] || '#9ca3af';
-        return `<div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 text-sm cursor-pointer group">
+        return `<div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-stone-100 text-sm cursor-pointer group">
           <span class="w-2 h-2 rounded-full shrink-0" style="background:${dotColor}"></span>
           <span class="font-semibold text-gray-800 w-12">${m.san}</span>
           <span class="text-gray-500 w-14 text-right font-mono text-xs">${ev}</span>
@@ -624,6 +680,9 @@
 
       // Concepts
       updateConcepts(data.concepts || data.concepts_after || {}, data.concept_diff || {});
+
+      // Tactics
+      updateTactics(data);
 
       // Move info
       if (data.played_move) {
@@ -707,12 +766,86 @@
       el.innerHTML = rows.join('');
     }
 
+    function updateTactics(data) {
+      const container = document.getElementById('tactics-display');
+      const list = document.getElementById('tactics-list');
+      const allTactics = [
+        ...(data.tactics_current || []).map(t => ({ ...t, source: 'board' })),
+        ...(data.tactics_in_best_line || []).map(t => ({ ...t, source: 'best' })),
+        ...(data.tactics_in_played_line || []).map(t => ({ ...t, source: 'played' })),
+      ];
+
+      if (allTactics.length === 0) {
+        container.classList.add('hidden');
+        return;
+      }
+      container.classList.remove('hidden');
+
+      const icons = {
+        fork: '⚔️', pin: '📌', skewer: '🔗',
+        discovered_attack: '💥', discovered_check: '⚡',
+      };
+      const typeNames = {
+        fork: 'Fork', pin: 'Pin', skewer: 'Skewer',
+        discovered_attack: 'Discovered Attack', discovered_check: 'Discovered Check',
+      };
+      const sourceLabels = {
+        board: 'On board', best: 'Best line', played: 'Played line',
+      };
+      const sourceColors = {
+        board: 'bg-amber-50 border-amber-200 text-amber-800',
+        best: 'bg-green-50 border-green-200 text-green-800',
+        played: 'bg-red-50 border-red-200 text-red-800',
+      };
+
+      list.innerHTML = allTactics.map(t => {
+        const icon = icons[t.type] || '⚡';
+        const name = typeNames[t.type] || t.type;
+        const src = sourceLabels[t.source] || '';
+        const colors = sourceColors[t.source] || 'bg-gray-50 border-gray-200 text-gray-800';
+        const plyNote = t.ply > 0 ? ` (in ${t.ply} ply)` : '';
+        let desc = '';
+        if (t.type === 'fork') {
+          const targets = (t.targets || []).map(x => x.piece).join(', ');
+          desc = `${t.attacker} → ${targets}`;
+        } else if (t.type === 'pin') {
+          desc = `${t.pinner} pins ${t.pinned} vs ${t.behind}`;
+        } else if (t.type === 'skewer') {
+          desc = `${t.attacker} → ${t.front} / ${t.behind}`;
+        } else if (t.type === 'discovered_attack' || t.type === 'discovered_check') {
+          desc = `${t.revealer} → ${t.target}`;
+        }
+        return `<div class="border rounded-lg p-2 ${colors} text-xs">
+          <div class="flex items-center gap-1.5">
+            <span>${icon}</span>
+            <span class="font-semibold">${name}</span>
+            <span class="text-[10px] opacity-60">${src}${plyNote}</span>
+          </div>
+          <div class="text-[11px] mt-0.5 opacity-80">${desc}</div>
+        </div>`;
+      }).join('');
+    }
+
     // ─── AI Coach ──────────────────────────────────────────
     function requestComment(analysis) {
+      if (commentLoading) return;
+      commentLoading = true;
+      lastCommentPly = currentPly;
+
+      const moveNum = Math.ceil(currentPly / 2);
+      const san = analysis.played_move || '';
+
+      // Show spinner immediately
+      const el = document.getElementById('comment-container');
+      el.innerHTML = `<div class="coach-box bg-blue-50 rounded-lg p-3 text-sm text-gray-700 leading-relaxed">
+        <div class="text-[10px] font-semibold text-blue-500 mb-1 uppercase tracking-wider">${t('coach')} &bull; ${moveNum}. ${san}</div>
+        <span class="inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>
+      </div>`;
+
       send({
         action: 'comment',
         analysis: analysis,
-        move_number: Math.ceil(currentPly / 2),
+        move_number: moveNum,
         lang: lang,
       });
     }
@@ -728,16 +861,49 @@
 
     function showComment(data) {
       const el = document.getElementById('comment-container');
-      const text = typeof data === 'string' ? data : '';
-      if (text) {
-        const rendered = text.startsWith('<span') ? text : renderMarkdown(text);
+      const comment = data.comment || '';
+      const prompt = data.prompt || '';
+      const error = data.error || '';
+
+      if (error && !comment) {
+        el.innerHTML = `<div class="coach-box bg-amber-50 rounded-lg p-3 text-xs text-amber-700">${error}</div>`;
+        return;
+      }
+
+      // Determine move reference
+      const moveNum = data.move_number || Math.ceil(currentPly / 2);
+      const entry = currentPly > 0 ? gameHistory[currentPly - 1] : null;
+      const san = entry?.analysis?.played_move || entry?.san || '';
+
+      if (comment) {
+        const rendered = renderMarkdown(comment);
+        // Store comment in game history
+        if (entry) entry.comment = comment;
+
+        let promptHtml = '';
+        if (prompt) {
+          promptHtml = `
+            <div class="mt-2">
+              <button onclick="this.nextElementSibling.classList.toggle('hidden'); this.textContent = this.nextElementSibling.classList.contains('hidden') ? '${t('showPrompt')}' : '${t('hidePrompt')}'"
+                      class="text-[10px] text-blue-400 hover:text-blue-600 cursor-pointer">${t('showPrompt')}</button>
+              <pre class="hidden mt-1 text-[10px] bg-stone-100 rounded p-2 text-stone-600 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto border border-stone-200">${escapeHtml(prompt)}</pre>
+            </div>`;
+        }
+
         el.innerHTML = `<div class="coach-box bg-blue-50 rounded-lg p-3 text-sm text-gray-700 leading-relaxed">
-          <div class="text-[10px] font-semibold text-blue-500 mb-1 uppercase tracking-wider">${t('coach')}</div>
+          <div class="text-[10px] font-semibold text-blue-500 mb-1 uppercase tracking-wider">${t('coach')} &bull; ${moveNum}. ${san}</div>
           ${rendered}
+          ${promptHtml}
         </div>`;
       } else {
         el.innerHTML = '';
       }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     // ─── Moves List ────────────────────────────────────────
@@ -779,6 +945,11 @@
       updateBoard();
       updateMovesList();
 
+      // Clear comment when navigating away
+      if (ply !== lastCommentPly) {
+        document.getElementById('comment-container').innerHTML = '';
+      }
+
       if (ply === 0) {
         document.getElementById('eval-display').textContent = '0.00';
         document.getElementById('eval-display').className = 'text-3xl font-bold font-mono text-gray-400';
@@ -786,7 +957,6 @@
         document.getElementById('best-moves').innerHTML = '';
         document.getElementById('opening-container').innerHTML = '';
         document.getElementById('tablebase-container').innerHTML = '';
-        document.getElementById('comment-container').innerHTML = '';
         document.getElementById('move-info').textContent = '';
         updateEvalBar(0, null);
         clearArrows();
@@ -848,7 +1018,6 @@
           bulk_index: i,
         });
 
-        // Wait for response
         await new Promise(resolve => {
           bulkResolve = resolve;
         });
@@ -859,7 +1028,6 @@
 
       bulkAnalyzing = false;
       hideBulkProgress();
-      // Refresh display of current ply
       if (currentPly > 0 && gameHistory[currentPly - 1]?.analysis) {
         updateAnalysisDisplay(gameHistory[currentPly - 1].analysis);
       }
@@ -893,6 +1061,7 @@
       stopBulkAnalysis();
       chess = new Chess();
       gameHistory = [];
+      gameMetadata = {};
       currentPly = 0;
       updateBoard();
       updateMovesList();
@@ -917,19 +1086,121 @@
       skillLevel = parseInt(e.target.value);
     });
 
-    // Tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    // Tabs (pill style)
+    document.querySelectorAll('.tab-pill').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => {
-          b.classList.remove('border-blue-500', 'text-blue-600');
-          b.classList.add('border-transparent', 'text-gray-400');
-        });
-        btn.classList.remove('border-transparent', 'text-gray-400');
-        btn.classList.add('border-blue-500', 'text-blue-600');
+        document.querySelectorAll('.tab-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
         document.getElementById(`panel-${btn.dataset.tab}`).classList.remove('hidden');
       });
     });
+
+    // ─── Save ──────────────────────────────────────────────
+    document.getElementById('btn-save').addEventListener('click', () => {
+      if (gameHistory.length === 0) return;
+
+      const moves = gameHistory.map(entry => ({
+        fen: entry.fen,
+        fenBefore: entry.fenBefore,
+        san: entry.san,
+        move_uci: entry.move_uci,
+        analysis: entry.analysis,
+        comment: entry.comment,
+      }));
+
+      send({
+        action: 'save_analysis',
+        game_data: {
+          metadata: gameMetadata,
+          moves: moves,
+        },
+      });
+    });
+
+    function showSavedConfirmation(data) {
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+      const btn = document.getElementById('btn-save');
+      const original = btn.textContent;
+      btn.textContent = t('saved');
+      btn.classList.add('bg-green-700', 'border-green-600');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('bg-green-700', 'border-green-600');
+      }, 2000);
+    }
+
+    function loadSavedAnalysis(data) {
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      stopBulkAnalysis();
+      gameMetadata = data.metadata || {};
+      const moves = data.moves || [];
+
+      chess = new Chess();
+      gameHistory = [];
+
+      for (const move of moves) {
+        try {
+          chess.move(move.san);
+          gameHistory.push({
+            fen: move.fen,
+            fenBefore: move.fenBefore,
+            san: move.san,
+            move_uci: move.move_uci,
+            analysis: move.analysis,
+            comment: move.comment,
+          });
+        } catch (e) {
+          console.warn('Failed to replay move:', move.san, e);
+          break;
+        }
+      }
+
+      chess = new Chess();
+      currentPly = 0;
+      updateBoard();
+      updateMovesList();
+
+      if (gameHistory.length > 0) {
+        goToPly(1);
+      }
+
+      closeImportModal();
+    }
+
+    function showAnalysisList(data) {
+      const el = document.getElementById('history-list');
+      const analyses = data.analyses || [];
+
+      if (analyses.length === 0) {
+        el.innerHTML = `<div class="text-sm text-gray-400 py-4 text-center">${t('noHistory')}</div>`;
+        return;
+      }
+
+      el.innerHTML = analyses.map(a => {
+        const date = a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '';
+        return `<div class="game-item p-2.5 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition" data-id="${a.id}">
+          <div class="flex items-center justify-between">
+            <div class="font-medium text-sm text-gray-800">${a.title || 'Untitled'}</div>
+            <span class="text-xs text-gray-400">${a.num_moves} moves</span>
+          </div>
+          <div class="text-xs text-gray-400 mt-0.5">${date}</div>
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('.game-item').forEach(item => {
+        item.addEventListener('click', () => {
+          send({ action: 'load_analysis', id: item.dataset.id });
+        });
+      });
+    }
 
     // ─── Import ────────────────────────────────────────────
     document.getElementById('btn-import').addEventListener('click', () => {
@@ -946,7 +1217,7 @@
       document.getElementById('import-modal').classList.remove('flex');
     }
 
-    const importPanels = ['lichess', 'chesscom', 'pgn'];
+    const importPanels = ['lichess', 'chesscom', 'pgn', 'history'];
     importPanels.forEach(src => {
       document.getElementById(`import-${src}-btn`).addEventListener('click', () => {
         importPanels.forEach(s => {
@@ -962,12 +1233,19 @@
             btn.className = 'flex-1 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition';
           }
         });
+        // Also clear game list when switching tabs
+        document.getElementById('game-list').innerHTML = '';
+        // Load history list when switching to history tab
+        if (src === 'history') {
+          send({ action: 'list_analyses' });
+        }
       });
     });
 
     document.getElementById('lichess-fetch').addEventListener('click', () => {
       const u = document.getElementById('lichess-username').value.trim();
       if (u) {
+        importUsername = u;
         document.getElementById('game-list').innerHTML = `<div class="flex items-center justify-center py-4 text-gray-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin mr-2"></span> ${t('loading')}</div>`;
         send({ action: 'import_lichess', username: u, max: 20 });
       }
@@ -975,6 +1253,7 @@
     document.getElementById('chesscom-fetch').addEventListener('click', () => {
       const u = document.getElementById('chesscom-username').value.trim();
       if (u) {
+        importUsername = u;
         document.getElementById('game-list').innerHTML = `<div class="flex items-center justify-center py-4 text-gray-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-gray-300 border-t-green-500 rounded-full animate-spin mr-2"></span> ${t('loading')}</div>`;
         send({ action: 'import_chesscom', username: u, max: 20 });
       }
@@ -996,6 +1275,19 @@
       }
     });
 
+    function formatRelativeDate(dateVal) {
+      if (!dateVal) return '';
+      const d = new Date(typeof dateVal === 'number' ? (dateVal > 1e12 ? dateVal : dateVal * 1000) : dateVal);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const diffMs = now - d;
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) return lang === 'ru' ? 'Сегодня' : 'Today';
+      if (diffDays === 1) return lang === 'ru' ? 'Вчера' : 'Yesterday';
+      if (diffDays < 7) return lang === 'ru' ? `${diffDays} дн. назад` : `${diffDays}d ago`;
+      return d.toLocaleDateString();
+    }
+
     function showImportedGames(data) {
       const el = document.getElementById('game-list');
       if (data.error) {
@@ -1006,18 +1298,48 @@
         el.innerHTML = `<p class="text-gray-400 text-sm py-2">${t('noGames')}</p>`;
         return;
       }
+
+      const username = (data.username || importUsername || '').toLowerCase();
+
       el.innerHTML = data.games.map((g, i) => {
-        const resultIcon = g.result === 'white' ? '1-0' : g.result === 'black' ? '0-1' : g.result === 'draw' ? '½-½' : g.result;
-        const resultColor = g.result === 'white' ? 'text-gray-800' : g.result === 'black' ? 'text-gray-500' : 'text-gray-400';
-        const dateStr = g.date ? new Date(typeof g.date === 'number' ? g.date * 1000 : g.date).toLocaleDateString() : '';
+        const whiteLower = (g.white || '').toLowerCase();
+        const blackLower = (g.black || '').toLowerCase();
+        const isUserWhite = username && whiteLower === username;
+        const isUserBlack = username && blackLower === username;
+
+        // Format names with bold for searched user and color indicator
+        const whiteCircle = '<span class="inline-block w-2.5 h-2.5 rounded-full bg-white border border-gray-400 mr-1 align-middle"></span>';
+        const blackCircle = '<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-800 mr-1 align-middle"></span>';
+        const whiteName = isUserWhite ? `<strong class="text-gray-900">${g.white}</strong>` : g.white;
+        const blackName = isUserBlack ? `<strong class="text-gray-900">${g.black}</strong>` : g.black;
+
+        // Result from user's perspective
+        let resultText, resultColor;
+        if (isUserWhite) {
+          if (g.result === 'white' || g.result === 'win') { resultText = t('won'); resultColor = 'text-green-600'; }
+          else if (g.result === 'draw') { resultText = t('draw'); resultColor = 'text-gray-500'; }
+          else { resultText = t('lost'); resultColor = 'text-red-500'; }
+        } else if (isUserBlack) {
+          if (g.result === 'black' || g.result === 'win') { resultText = t('won'); resultColor = 'text-green-600'; }
+          else if (g.result === 'draw') { resultText = t('draw'); resultColor = 'text-gray-500'; }
+          else { resultText = t('lost'); resultColor = 'text-red-500'; }
+        } else {
+          const resultMap = { white: '1-0', black: '0-1', draw: '½-½', win: '1-0', checkmated: '0-1' };
+          resultText = resultMap[g.result] || g.result || '?';
+          resultColor = 'text-gray-500';
+        }
+
+        const dateStr = formatRelativeDate(g.date);
+
         return `
         <div class="game-item p-2.5 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition" data-idx="${i}">
           <div class="flex items-center justify-between">
-            <div class="font-medium text-sm text-gray-800">${g.white} <span class="text-gray-400 text-xs">${g.white_rating || ''}</span>
-              <span class="text-gray-400 mx-1">vs</span>
-              ${g.black} <span class="text-gray-400 text-xs">${g.black_rating || ''}</span>
+            <div class="text-sm text-gray-700">
+              ${whiteCircle}${whiteName} <span class="text-gray-400 text-xs">${g.white_rating || ''}</span>
+              <span class="text-gray-300 mx-1">vs</span>
+              ${blackCircle}${blackName} <span class="text-gray-400 text-xs">${g.black_rating || ''}</span>
             </div>
-            <span class="font-bold text-sm ${resultColor}">${resultIcon}</span>
+            <span class="font-semibold text-sm ${resultColor}">${resultText}</span>
           </div>
           <div class="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
             ${g.opening ? `<span class="text-gray-500">${g.opening}</span>` : ''}
@@ -1027,11 +1349,20 @@
         </div>`;
       }).join('');
 
-      window._importedGames = data.games;
       el.querySelectorAll('.game-item').forEach(item => {
         item.addEventListener('click', () => {
           const game = data.games[parseInt(item.dataset.idx)];
           if (game.pgn) {
+            gameMetadata = {
+              white: game.white,
+              black: game.black,
+              white_rating: game.white_rating,
+              black_rating: game.black_rating,
+              result: game.result,
+              opening: game.opening,
+              speed: game.speed,
+              date: game.date,
+            };
             loadPGN(game.pgn);
             closeImportModal();
           }
@@ -1058,6 +1389,7 @@
           san: move.san,
           move_uci: move.from + move.to + (move.promotion || ''),
           analysis: null,
+          comment: null,
         });
       }
 
@@ -1067,7 +1399,6 @@
       updateMovesList();
       clearArrows();
 
-      // Auto-analyze
       if (gameHistory.length > 0) {
         setTimeout(() => bulkAnalyze(), 300);
       }

@@ -98,11 +98,17 @@ def get_sf8_eval_trace(fen: str, sf8_path: str | Path = SF8_PATH) -> dict[str, d
 
     Returns dict mapping term name to {white_mg, white_eg, black_mg, black_eg, ...}
     """
-    cmd = f'echo "position fen {fen}\neval\nquit" | {sf8_path}'
-    result = subprocess.run(
-        cmd, shell=True, capture_output=True, text=True, timeout=10
+    proc = subprocess.Popen(
+        [str(sf8_path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    output = result.stdout
+    output, _ = proc.communicate(
+        input=f"position fen {fen}\neval\nquit\n",
+        timeout=10,
+    )
 
     terms = {}
     for line in output.split("\n"):

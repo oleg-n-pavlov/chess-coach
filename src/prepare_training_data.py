@@ -1,29 +1,120 @@
 """Prepare training data for SVM concept classifiers.
 
 Pipeline:
-1. Generate diverse chess positions (from random games or Lichess database)
+1. Generate diverse chess positions (from Lichess games, PGN files, or random)
 2. For each position: get Leela vector (512-dim) and SF8 concept labels (24 values)
 3. Save as numpy arrays for SVM training
 
-For proof of concept, we generate positions by playing random games.
-For production, use Lichess eval database positions.
+Recommended: Use Lichess API to get real game positions for best quality.
 """
 
 import json
 import random
 import sys
 import time
+from io import StringIO
 from pathlib import Path
 
 import chess
 import chess.pgn
 import numpy as np
+import requests
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from concept_extractor import LeelaConceptExtractor
 from concept_labeler import label_position
+
+
+def positions_from_lichess(
+    n_positions: int,
+    min_rating: int = 2000,
+    players: list[str] | None = None,
+    seed: int = 42,
+) -> list[chess.Board]:
+    """Download games from Lichess API and extract positions.
+
+    Uses top players' rated games to get realistic positions
+    across all game phases.
+
+    Args:
+        n_positions: Target number of positions.
+        min_rating: Minimum player rating filter.
+        players: List of Lichess usernames. If None, uses default top players.
+        seed: Random seed for position sampling.
+    """
+    random.seed(seed)
+
+    if players is None:
+        # Mix of strong players with different styles
+        players = [
+            "DrNykterstein",   # Magnus Carlsen
+            "nihalsarin",      # Nihal Sarin
+            "Zhigalko_Sergei", # GM Sergei Zhigalko
+            "lance5500",       # GM Alireza Firouzja
+            "penguingm1",      # GM Andrew Tang (bullet specialist)
+            "opperwezen",      # GM Anish Giri
+            "Vladimirovich9000",  # various GM
+            "FeegLood",        # GM Daniil Dubov
+        ]
+
+    positions = []
+    games_per_player = max(50, n_positions // (len(players) * 8) + 10)
+
+    for player in players:
+        if len(positions) >= n_positions:
+            break
+
+        print(f"  Downloading games from {player}...")
+        try:
+            resp = requests.get(
+                f"https://lichess.org/api/games/user/{player}",
+                params={
+                    "max": games_per_player,
+                    "rated": "true",
+                    "perfType": "blitz,rapid,classical",
+                },
+                headers={"Accept": "application/x-chess-pgn"},
+                timeout=30,
+                stream=True,
+            )
+            if resp.status_code != 200:
+                print(f"    Error: {resp.status_code}")
+                continue
+
+            pgn_text = resp.text
+            pgn_io = StringIO(pgn_text)
+
+            game_count = 0
+            while len(positions) < n_positions:
+                game = chess.pgn.read_game(pgn_io)
+                if game is None:
+                    break
+
+                game_count += 1
+                board = game.board()
+                moves = list(game.mainline_moves())
+
+                for i, move in enumerate(moves):
+                    board.push(move)
+                    # Sample positions: skip early opening, sample every ~4th move
+                    if i >= 8 and random.random() < 0.25:
+                        positions.append(board.copy())
+                        if len(positions) >= n_positions:
+                            break
+
+            print(f"    Got {game_count} games, {len(positions)} positions total")
+
+        except Exception as e:
+            print(f"    Error downloading from {player}: {e}")
+            continue
+
+        # Rate limit: Lichess asks for max 1 request per second
+        time.sleep(1.5)
+
+    random.shuffle(positions)
+    return positions[:n_positions]
 
 
 def generate_random_positions(n_positions: int, seed: int = 42) -> list[chess.Board]:
@@ -97,6 +188,7 @@ def prepare_data(
     n_positions: int = 5000,
     output_dir: str | Path = "data",
     pgn_path: str | Path | None = None,
+    source: str = "random",
 ) -> None:
     """Prepare training data: Leela vectors + SF8 labels.
 
@@ -104,18 +196,28 @@ def prepare_data(
         n_positions: Number of positions to process.
         output_dir: Directory to save output files.
         pgn_path: Optional PGN file to extract positions from.
+        source: Position source: "random", "lichess", or "pgn".
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Generate positions
-    print(f"Step 1: Generating {n_positions} positions...")
-    if pgn_path:
+    print(f"Step 1: Getting {n_positions} positions (source: {source})...")
+    if source == "lichess":
+        positions = positions_from_lichess(n_positions)
+    elif source == "pgn" or pgn_path:
+        if not pgn_path:
+            print("Error: --pgn path required for pgn source")
+            return
         positions = positions_from_pgn(pgn_path, n_positions)
         print(f"  Got {len(positions)} positions from PGN")
     else:
         positions = generate_random_positions(n_positions)
     print(f"  Done: {len(positions)} positions")
+
+    if len(positions) == 0:
+        print("No positions generated!")
+        return
 
     # Step 2: Extract Leela vectors
     print("Step 2: Extracting Leela vectors...")
@@ -142,19 +244,32 @@ def prepare_data(
     all_labels = []
     label_names = None
     t0 = time.time()
+    failed = 0
 
     for i, board in enumerate(positions):
-        labels = label_position(board)
-        if label_names is None:
-            label_names = sorted(labels.keys())
-        label_vec = [labels[k] for k in label_names]
-        all_labels.append(label_vec)
+        try:
+            labels = label_position(board)
+            if label_names is None:
+                label_names = sorted(labels.keys())
+            label_vec = [labels[k] for k in label_names]
+            all_labels.append(label_vec)
+        except Exception as e:
+            failed += 1
+            if failed <= 3:
+                print(f"    Warning: failed to label position {i}: {e}")
+            # Use zeros for failed positions
+            if label_names:
+                all_labels.append([0.0] * len(label_names))
+            continue
 
         if (i + 1) % 50 == 0:
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed
             remaining = (len(positions) - i - 1) / rate
             print(f"  [{i + 1}/{len(positions)}] {rate:.1f} pos/s, ~{remaining:.0f}s remaining")
+
+    if failed > 0:
+        print(f"  Warning: {failed} positions failed SF8 labeling")
 
     labels_array = np.array(all_labels)  # (N, 24)
     print(f"  Done: labels shape = {labels_array.shape}")
@@ -180,10 +295,14 @@ def prepare_data(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Prepare training data for SVM concept classifiers")
     parser.add_argument("-n", "--n-positions", type=int, default=5000)
     parser.add_argument("-o", "--output-dir", default="data")
-    parser.add_argument("--pgn", default=None, help="Optional PGN file for positions")
+    parser.add_argument("--pgn", default=None, help="PGN file for positions (with --source pgn)")
+    parser.add_argument(
+        "--source", default="random", choices=["random", "lichess", "pgn"],
+        help="Position source: random (semi-random games), lichess (top player games via API), pgn (from file)"
+    )
     args = parser.parse_args()
 
-    prepare_data(args.n_positions, args.output_dir, args.pgn)
+    prepare_data(args.n_positions, args.output_dir, args.pgn, args.source)

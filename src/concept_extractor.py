@@ -58,10 +58,17 @@ class LeelaConceptExtractor:
             self._load_svms(Path(svm_dir))
 
     def _load_svms(self, svm_dir: Path) -> None:
-        """Load pre-trained SVM classifiers for concept scoring."""
+        """Load pre-trained SVM classifiers and scaler for concept scoring."""
         import joblib
 
         self.svms = {}
+        self.scaler = None
+
+        # Load the StandardScaler used during training
+        scaler_path = svm_dir / "scaler.joblib"
+        if scaler_path.exists():
+            self.scaler = joblib.load(scaler_path)
+
         for concept in CONCEPTS:
             path = svm_dir / f"{concept}.joblib"
             if path.exists():
@@ -119,12 +126,17 @@ class LeelaConceptExtractor:
         vec = self.get_raw_vector(board, history)
 
         if self.svms:
+            # Apply the same scaling used during training
+            vec_input = vec.reshape(1, -1)
+            if self.scaler is not None:
+                vec_input = self.scaler.transform(vec_input)
+
             scores = {}
             for concept in CONCEPTS:
                 if concept in self.svms:
                     # decision_function returns distance from boundary
                     # positive = more of this concept, negative = less
-                    score = self.svms[concept].decision_function(vec.reshape(1, -1))[0]
+                    score = self.svms[concept].decision_function(vec_input)[0]
                     scores[concept] = float(score)
             return scores
         else:

@@ -15,6 +15,11 @@ import chess.engine
 from concept_extractor import LeelaConceptExtractor
 from opening_book import OpeningBook
 from tablebase import Tablebase
+from tactical_detector import (
+    analyze_pv_tactics,
+    detect_current_tactics,
+    filter_significant_tactics,
+)
 
 
 # Piece values for material counting (standard)
@@ -118,6 +123,7 @@ class PositionAnalyzer:
                     "eval": _score_to_cp(score, board.turn),
                     "mate_in": _score_to_mate(score, board.turn),
                     "pv": pv_san if pv_san else [board.san(pv[0])],
+                    "pv_moves": list(pv[:6]),  # chess.Move objects for tactical analysis
                 })
 
         # Concept analysis (before move)
@@ -142,6 +148,7 @@ class PositionAnalyzer:
             played_san = board.san(played_move)
             played_eval = None
             played_mate_in = None
+            played_pv_moves = []  # PV for played move (chess.Move objects)
             is_best = False
 
             # Find eval of played move
@@ -149,6 +156,7 @@ class PositionAnalyzer:
                 if bm["move"] == played_move:
                     played_eval = bm["eval"]
                     played_mate_in = bm["mate_in"]
+                    played_pv_moves = bm.get("pv_moves", [])
                     is_best = (bm == best_moves[0])
                     break
 
@@ -161,6 +169,9 @@ class PositionAnalyzer:
                 if score:
                     played_eval = _score_to_cp(score, board_after.turn)
                     played_mate_in = _score_to_mate_after(score, board_after.turn)
+                # Get PV for played move: played_move + continuation
+                pv_after = info.get("pv", [])
+                played_pv_moves = [played_move] + list(pv_after[:5])
 
             # Concept diff
             board_after = board.copy()
@@ -184,6 +195,18 @@ class PositionAnalyzer:
                 best_moves, opening_info, played_mate_in,
             )
 
+            # Tactical analysis
+            best_pv_moves = best_moves[0].get("pv_moves", []) if best_moves else []
+            tactics_best = filter_significant_tactics(
+                analyze_pv_tactics(board, best_pv_moves)
+            ) if best_pv_moves else []
+            tactics_played = filter_significant_tactics(
+                analyze_pv_tactics(board, played_pv_moves)
+            ) if played_pv_moves else []
+            tactics_current = filter_significant_tactics(
+                detect_current_tactics(board)
+            )
+
             result.update({
                 "played_move": played_san,
                 "played_eval": played_eval,
@@ -196,6 +219,10 @@ class PositionAnalyzer:
                 "concept_diff": concept_diff,
                 # Top 3 most changed concepts
                 "key_concepts": _top_concept_changes(concept_diff),
+                # Tactical motifs
+                "tactics_in_best_line": tactics_best,
+                "tactics_in_played_line": tactics_played,
+                "tactics_current": tactics_current,
             })
 
         return result
@@ -284,12 +311,7 @@ def _classify_move(
 
     # Forced: all other top moves lose badly (>300cp worse than best)
     if is_best and len(best_moves) >= 2:
-        second_eval = best_moves[1]["eval"]
-        best_eval = best_moves[0]["eval"]
-        gap = best_eval - second_eval
-        if board.turn == chess.BLACK:
-            gap = second_eval - best_eval
-        if abs(best_eval - second_eval) > 300:
+        if abs(best_moves[0]["eval"] - best_moves[1]["eval"]) > 300:
             return "forced"
 
     # Brilliant: near-best move that sacrifices material
@@ -298,9 +320,6 @@ def _classify_move(
 
     # Great: near-best and only non-losing move (others are >150cp worse)
     if eval_loss <= 10 and len(best_moves) >= 2:
-        second_loss = best_moves[0]["eval"] - best_moves[1]["eval"]
-        if board.turn == chess.BLACK:
-            second_loss = best_moves[1]["eval"] - best_moves[0]["eval"]
         if abs(best_moves[0]["eval"] - best_moves[1]["eval"]) > 150:
             return "great"
 
